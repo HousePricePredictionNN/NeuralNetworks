@@ -35,7 +35,7 @@ def simple_sinus_function_regression_using_polynomial_with_autograd(number_of_ep
         elif t == 0:
             print(f"first epoch => loss: {loss.item()}")
 
-        # Automatyczne wyznaczenie nowych wag (a-d) z wykorzystaniem backward
+        # Automatyczne wyznaczenie gradientow z wykorzystaniem backward
         loss.backward()
 
         # Wylaczenie sledzenia operacji na wagach za pomoca funckji no_grad()
