@@ -7,9 +7,7 @@ from sklearn.model_selection import train_test_split
 from sklearn.preprocessing import StandardScaler, RobustScaler
 from sklearn.metrics import mean_absolute_error, mean_squared_error, r2_score
 
-
-def house_price_prediction_using_mlp_model(filename, number_of_rows_to_load, number_of_epochs, input_test_data,
-                                           loss_values_array):
+def house_price_prediction_using_mlp_model(filename, number_of_rows_to_load, number_of_epochs, input_test_data, loss_values_array, val_loss_array):
     # Rozpoczecie pomiaru czasu
     timer_start = time.time()
 
@@ -85,48 +83,29 @@ def house_price_prediction_using_mlp_model(filename, number_of_rows_to_load, num
         # Obliczenie wartosci funkcji straty
         loss = loss_fn(y_pred_train, y_train_tensor)
 
-        # Czy ewaluacja na zbiorze walidacyjnym nie powinna sie odbywac przed obliczaniem gradientow???
-        """
-        Przed obliczeniem gradientow
-        final training epoch => train loss: 0.0502365306019783, val loss: 0.13093280792236328
-        
-        final test loss: 0.13181623816490173
-        
-        Model Scores:
-        MAE: 41924.21875
-        RMSE: 3556964096.0
-        R2: 0.8673538565635681
-        
-        Po obliczeniu gradientow
-        final training epoch => train loss: 0.046756114810705185, val loss: 0.11753992736339569
-        
-        final test loss: 0.1182389184832573
-        
-        Model Scores:
-        MAE: 39525.03125
-        RMSE: 3190590720.0
-        R2: 0.8810166120529175
-        """
-
         # Obliczenie gradientow
         loss.backward()
 
         # Aktualizacja wag
         optimizer.step()
 
+        model.eval()
+        with torch.no_grad():
+            y_pred_val = model(X_val_tensor).squeeze()
+            val_loss = loss_fn(y_pred_val, y_val_tensor)
+
         # Okresowa ewaluacja na zbiorze walidacyjnym (na poczatku, koncu i co setna epoke)
         if t % 100 == 0 or t == number_of_epochs - 1:
             # Ewaluacja modelu na zbiorze walidacyjnym
-            model.eval()
-            with torch.no_grad():
-                y_pred_val = model(X_val_tensor).squeeze()
-                val_loss = loss_fn(y_pred_val, y_val_tensor)
             if t == 0:
                 print(f"first training epoch => train loss: {loss.item()}, val loss: {val_loss.item()}")
             elif t == number_of_epochs - 1:
                 print(f"final training epoch => train loss: {loss.item()}, val loss: {val_loss.item()}")
             else:
                 print(f"epoch: {t} => train loss: {loss.item()}, val loss: {val_loss.item()}")
+
+        # Dodanie wartosci funkcji straty do tablicy
+        val_loss_array.append(val_loss.item())
 
         # Dodanie wartosci funkcji straty do tablicy
         loss_values_array.append(loss.item())
@@ -168,4 +147,4 @@ def house_price_prediction_using_mlp_model(filename, number_of_rows_to_load, num
     # Denormalizacja predykcji
     predicted_data = scaler_y.inverse_transform(prediction)
 
-    return predicted_data, loss_values_array
+    return predicted_data, loss_values_array, val_loss_array
