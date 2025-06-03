@@ -1,0 +1,122 @@
+# Enhanced Neural Network Configuration
+project:
+  name: "house_price_prediction"
+  description: "Neural network for house price prediction with enhanced modularity"
+  version: "2.0"
+
+# Data Configuration
+data:
+  csv_path: "../data/input/data.csv"
+  encoding: "utf-8"
+  separator: null # auto-detect
+
+  # Data loading strategy
+  loading:
+    total_rows: 10000 # 58000
+    train_ratio: 0.7 # 70% for training
+    val_ratio: 0.15 # 15% for validation
+    test_ratio: 0.15 # 15% for final testing (verification)
+    shuffle_data: true
+    random_state: 42
+
+  # Missing data handling
+  missing_data:
+    strategy: "median" # median, mean, mode, drop
+    threshold: 0.7 # drop columns with >70% missing values
+
+  # Feature engineering
+  preprocessing:
+    normalize_features: true
+    scaler_type: "standard" # standard, robust, minmax
+    handle_outliers: true
+    outlier_method: "iqr" # iqr, zscore
+    outlier_threshold: 3.0
+
+  # Columns to drop (data leakage prevention and high missing data)
+  columns_to_drop:
+    # Categorical columns
+    - "city"
+    - "property_type"
+    - "ownership_type"
+    - "voivodeship"
+    - "quarter"
+
+    # Data leakage columns
+    - "price_per_sqm"
+    - "primary_price"
+    - "secondary_price"
+
+    # High missing data columns
+    - "latitude"
+    - "longitude"
+    - "poi_count"
+    - "has_storage"
+
+# Model Configuration
+model:
+  # Training parameters
+  training:
+    epochs: 500 # 1000
+    batch_size: 32
+    learning_rate: 0.001
+    early_stopping:
+      enabled: true
+      patience: 50
+      min_delta: 0.001
+      restore_best_weights: true
+
+  # Cross validation
+  cross_validation:
+    enabled: true
+    folds: 2 # 5
+    scoring: "neg_mean_absolute_error"
+
+  # Neural Network Architecture
+  architecture:
+    hidden_layers: [128, 64, 32, 16]
+    dropout_rate: 0.3
+    activation: "relu"
+    output_activation: "linear"
+    batch_normalization: true
+
+  # Loss and Optimization
+  optimization:
+    loss_function: "mse"
+    optimizer: "adam"
+    optimizer_params:
+      weight_decay: 0.0001
+    metrics: ["mae", "mse", "r2"]
+
+  # Hyperparameter tuning
+  grid_search:
+    enabled: false
+    parameters:
+      learning_rate: [0.001, 0.01, 0.0001]
+      hidden_layers:
+        - [64, 32]
+        - [128, 64, 32]
+        - [256, 128, 64, 32]
+      dropout_rate: [0.2, 0.3, 0.4]
+      batch_size: [16, 32, 64]
+
+# Output Configuration
+output:
+  results_dir: "data/output"
+  save_model: true
+  save_predictions: true
+  save_plots: true
+  save_config: true
+
+  # Plotting options
+  plots:
+    loss_curve: true
+    predictions_vs_actual: true
+    residuals_plot: true
+    feature_importance: true
+    model_architecture: true
+
+# Logging Configuration
+logging:
+  level: "INFO" # DEBUG, INFO, WARNING, ERROR
+  save_to_file: true
+  console_output: true
