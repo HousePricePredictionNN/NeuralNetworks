@@ -12,7 +12,7 @@ data:
 
   # Data loading strategy
   loading:
-    total_rows: 10000 # 58000
+    total_rows: 58000
     train_ratio: 0.7 # 70% for training
     val_ratio: 0.15 # 15% for validation
     test_ratio: 0.15 # 15% for final testing (verification)
@@ -21,7 +21,7 @@ data:
 
   # Missing data handling
   missing_data:
-    strategy: "median" # median, mean, mode, drop
+    strategy: "median" # mean, median, mode, drop
     threshold: 0.7 # drop columns with >70% missing values
 
   # Feature engineering
@@ -56,7 +56,7 @@ data:
 model:
   # Training parameters
   training:
-    epochs: 500 # 1000
+    epochs: 1000
     batch_size: 32
     learning_rate: 0.001
     early_stopping:
@@ -68,7 +68,7 @@ model:
   # Cross validation
   cross_validation:
     enabled: true
-    folds: 2 # 5
+    folds: 5
     scoring: "neg_mean_absolute_error"
 
   # Neural Network Architecture
@@ -77,8 +77,6 @@ model:
     dropout_rate: 0.3
     activation: "relu"
     output_activation: "linear"
-    batch_normalization: true
-
   # Loss and Optimization
   optimization:
     loss_function: "mse"
@@ -86,18 +84,6 @@ model:
     optimizer_params:
       weight_decay: 0.0001
     metrics: ["mae", "mse", "r2"]
-
-  # Hyperparameter tuning
-  grid_search:
-    enabled: false
-    parameters:
-      learning_rate: [0.001, 0.01, 0.0001]
-      hidden_layers:
-        - [64, 32]
-        - [128, 64, 32]
-        - [256, 128, 64, 32]
-      dropout_rate: [0.2, 0.3, 0.4]
-      batch_size: [16, 32, 64]
 
 # Output Configuration
 output:

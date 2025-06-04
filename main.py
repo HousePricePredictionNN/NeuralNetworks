@@ -3,7 +3,6 @@ Main orchestration module for the enhanced neural network project
 """
 import logging
 from datetime import datetime
-from pathlib import Path
 from typing import Dict, Any
 import numpy as np
 
@@ -11,7 +10,6 @@ import numpy as np
 from src.config.config_manager import ConfigManager
 from src.data.data_loader import DataLoader
 from src.models.neural_network import ModelTrainer
-from src.optimization.hyperparameter_tuning import HyperparameterOptimizer
 from src.visualization.plotting import ResultsVisualizer
 
 class NeuralNetworkPipeline:
@@ -48,27 +46,16 @@ class NeuralNetworkPipeline:
             # Step 1: Data preparation
             self.logger.info("Step 1: Preparing data...")
             data_splits = self.data_loader.prepare_data_pipeline()
-            
-            # Step 2: Hyperparameter optimization (if enabled)
-            if self.config.get('model.grid_search.enabled', False):
-                self.logger.info("Step 2: Hyperparameter optimization...")
-                optimizer = HyperparameterOptimizer(self.config)
-                best_params = optimizer.optimize(data_splits['X_train'], data_splits['y_train'])
-                self.logger.info(f"Best parameters found: {best_params}")
-            else:
-                self.logger.info("Step 2: Skipping hyperparameter optimization...")
-            
-            # Step 3: Model training with cross-validation
-            self.logger.info("Step 3: Training model...")
+              # Step 2: Model training with cross-validation
+            self.logger.info("Step 2: Training model...")
             
             # Combine train and validation for cross-validation
             X_train_full = np.vstack([data_splits['X_train'], data_splits['X_val']])
             y_train_full = np.concatenate([data_splits['y_train'], data_splits['y_val']])
             
             training_results = self.trainer.cross_validate(X_train_full, y_train_full)
-            
-            # Step 4: Final evaluation on test set
-            self.logger.info("Step 4: Evaluating on test set...")
+              # Step 3: Final evaluation on test set
+            self.logger.info("Step 3: Evaluating on test set...")
             test_metrics, test_predictions = self.trainer.evaluate_model(
                 training_results['best_model'], 
                 data_splits['X_test'], 
@@ -80,9 +67,8 @@ class NeuralNetworkPipeline:
             y_test_denorm = data_splits['scalers']['scaler_y'].inverse_transform(
                 data_splits['y_test'].reshape(-1, 1)
             ).squeeze()
-            
-            # Step 5: Generate visualizations
-            self.logger.info("Step 5: Generating visualizations...")
+              # Step 4: Generate visualizations
+            self.logger.info("Step 4: Generating visualizations...")
             
             # Training curves
             self.visualizer.plot_training_curves(
