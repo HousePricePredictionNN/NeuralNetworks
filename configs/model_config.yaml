@@ -23,14 +23,11 @@ data:
   missing_data:
     strategy: "median" # mean, median, mode, drop
     threshold: 0.7 # drop columns with >70% missing values
-
   # Feature engineering
   preprocessing:
     normalize_features: true
     scaler_type: "standard" # standard, robust, minmax
-    handle_outliers: true
-    outlier_method: "iqr" # iqr, zscore
-    outlier_threshold: 3.0
+    handle_outliers: true # Only removes extreme price outliers
 
   # Columns to drop (data leakage prevention and high missing data)
   columns_to_drop:
