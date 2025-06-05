@@ -112,8 +112,7 @@ def main():
         level=logging.INFO,
         format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
         handlers=[
-            logging.StreamHandler(),
-            logging.FileHandler('neural_network.log')
+            logging.StreamHandler()
         ]
     )
     
