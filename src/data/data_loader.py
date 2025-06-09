@@ -204,8 +204,7 @@ class DataLoader:
             X, y, 
             test_size=test_size,
             random_state=random_state,
-            shuffle=shuffle_data,
-            stratify=None  # For regression
+            shuffle=shuffle_data
         )
         
         # Second split: separate train and validation
