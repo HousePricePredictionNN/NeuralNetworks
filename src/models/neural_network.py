@@ -12,13 +12,13 @@ from sklearn.model_selection import KFold
 from sklearn.metrics import mean_absolute_error, mean_squared_error, r2_score
 import time
 
-class EnhancedNeuralNetwork(nn.Module):
+class NeuralNetwork(nn.Module):
     """
     Enhanced neural network with configurable architecture
     """
     
     def __init__(self, input_size: int, config_manager):
-        super(EnhancedNeuralNetwork, self).__init__()
+        super(NeuralNetwork, self).__init__()
         self.config = config_manager
         self.input_size = input_size
         
@@ -26,11 +26,9 @@ class EnhancedNeuralNetwork(nn.Module):
         hidden_layers = self.config.get('model.architecture.hidden_layers', [128, 64, 32])
         dropout_rate = self.config.get('model.architecture.dropout_rate', 0.2)
         activation = self.config.get('model.architecture.activation', 'relu')
-        batch_norm = self.config.get('model.architecture.batch_normalization', True)
         
         # Build network layers
         self.layers = nn.ModuleList()
-        self.batch_norms = nn.ModuleList() if batch_norm else None
         self.dropouts = nn.ModuleList()
         
         # Input layer
@@ -39,10 +37,6 @@ class EnhancedNeuralNetwork(nn.Module):
         # Hidden layers
         for hidden_size in hidden_layers:
             self.layers.append(nn.Linear(current_size, hidden_size))
-            
-            if batch_norm:
-                self.batch_norms.append(nn.BatchNorm1d(hidden_size))
-            
             self.dropouts.append(nn.Dropout(dropout_rate))
             current_size = hidden_size
         
@@ -79,10 +73,6 @@ class EnhancedNeuralNetwork(nn.Module):
         for i, layer in enumerate(self.layers):
             x = layer(x)
             
-            # Apply batch normalization if enabled
-            if self.batch_norms is not None:
-                x = self.batch_norms[i](x)
-            
             # Apply activation
             x = self.activation(x)
             
@@ -104,9 +94,9 @@ class ModelTrainer:
         self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
         self.logger.info(f"Using device: {self.device}")
     
-    def create_model(self, input_size: int) -> EnhancedNeuralNetwork:
+    def create_model(self, input_size: int) -> NeuralNetwork:
         """Create model instance"""
-        model = EnhancedNeuralNetwork(input_size, self.config)
+        model = NeuralNetwork(input_size, self.config)
         return model.to(self.device)
     
     def train_single_fold(self, 

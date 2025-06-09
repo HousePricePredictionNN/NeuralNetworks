@@ -148,46 +148,16 @@ class DataLoader:
         return data
     
     def _handle_outliers(self, data: pd.DataFrame) -> pd.DataFrame:
-        """Remove or cap outliers based on configuration"""
-        method = self.config.get('data.preprocessing.outlier_method', 'iqr')
-        threshold = self.config.get('data.preprocessing.outlier_threshold', 3.0)
+        """Remove price outliers (extreme prices only)"""
         
-        numeric_columns = data.select_dtypes(include=[np.number]).columns
-        numeric_columns = [col for col in numeric_columns if col != 'price']  # Don't remove price outliers
-        
-        outlier_count = 0
-        
-        for col in numeric_columns:
-            if method == 'iqr':
-                Q1 = data[col].quantile(0.25)
-                Q3 = data[col].quantile(0.75)
-                IQR = Q3 - Q1
-                lower_bound = Q1 - 1.5 * IQR
-                upper_bound = Q3 + 1.5 * IQR
-                
-                outliers = (data[col] < lower_bound) | (data[col] > upper_bound)
-                outlier_count += outliers.sum()
-                
-                # Cap outliers instead of removing
-                data.loc[data[col] < lower_bound, col] = lower_bound
-                data.loc[data[col] > upper_bound, col] = upper_bound
-                
-            elif method == 'zscore':
-                z_scores = np.abs((data[col] - data[col].mean()) / data[col].std())
-                outliers = z_scores > threshold
-                outlier_count += outliers.sum()
-                
-                # Cap outliers at threshold
-                mean_val = data[col].mean()
-                std_val = data[col].std()
-                upper_bound = mean_val + threshold * std_val
-                lower_bound = mean_val - threshold * std_val
-                
-                data.loc[data[col] > upper_bound, col] = upper_bound
-                data.loc[data[col] < lower_bound, col] = lower_bound
-        
-        if outlier_count > 0:
-            self.logger.info(f"Handled {outlier_count} outliers using {method} method")
+        # Handle price outliers separately (remove rows with extreme prices)
+        if 'price' in data.columns:
+            initial_rows = len(data)
+            # Remove houses above 1,000,000 zł and below 50,000 zł
+            data = data[(data['price'] >= 50000) & (data['price'] <= 1000000)]
+            removed_rows = initial_rows - len(data)
+            if removed_rows > 0:
+                self.logger.info(f"Removed {removed_rows} rows with extreme prices (outside 50k-1M zł range)")
         
         return data
     
@@ -234,8 +204,7 @@ class DataLoader:
             X, y, 
             test_size=test_size,
             random_state=random_state,
-            shuffle=shuffle_data,
-            stratify=None  # For regression
+            shuffle=shuffle_data
         )
         
         # Second split: separate train and validation
