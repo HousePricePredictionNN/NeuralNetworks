@@ -5,6 +5,7 @@ Simplified visualization module for neural network results
 from datetime import datetime
 import matplotlib.pyplot as plt
 import numpy as np
+import pandas as pd
 import logging
 from pathlib import Path
 from typing import List, Optional
@@ -14,9 +15,6 @@ from sklearn.metrics import mean_absolute_error, mean_squared_error, r2_score
 plt.style.use('default')
 
 class ResultsVisualizer:
-    """
-    Simplified visualization for neural network training and results
-    """
     
     def __init__(self, config_manager, output_dir: Path):
         self.config = config_manager
@@ -27,6 +25,46 @@ class ResultsVisualizer:
         # Set matplotlib parameters
         plt.rcParams['figure.figsize'] = (10, 6)
         plt.rcParams['font.size'] = 10
+    
+    def plot_missing_data(self, data: pd.DataFrame) -> str:
+        if not self.config.get('output.plots.missing_data', True):
+            return ""
+        
+        import pandas as pd
+        import seaborn as sns
+        
+        # Create figure with two subplots
+        fig, ax,  = plt.subplots(1, 1, figsize=(12, 10))
+        
+        # Calculate missing values percentage per column
+        missing_percentage = data.isna().mean() * 100
+        missing_percentage = missing_percentage.sort_values(ascending=False)
+        
+        # 1. Top plot - percentage of missing values per column
+        bars = ax.bar(range(len(missing_percentage)), missing_percentage, color='skyblue')
+        
+        # Add value labels above each bar
+        for i, v in enumerate(missing_percentage):
+            if v > 0:  # Only show label if there are missing values
+                ax.text(i, v + 0.5, f'{v:.1f}%', ha='center', fontsize=8)
+        
+        # Configure axes
+        ax.set_xticks(range(len(missing_percentage)))
+        ax.set_xticklabels(missing_percentage.index, rotation=90)
+        ax.set_ylabel('Missing Values (%)')
+        ax.set_title('Percentage of Missing Values by Column')
+        ax.grid(axis='y', linestyle='--', alpha=0.7)
+        ax.set_ylim(0, max(missing_percentage.max() * 1.1, 0.01))
+        
+        plt.tight_layout()
+        
+        # Save plot
+        missing_data_path = self.output_dir / 'missing_data.png'
+        plt.savefig(missing_data_path, dpi=300, bbox_inches='tight')
+        plt.close()
+        
+        self.logger.info(f"Missing data visualization saved to {missing_data_path}")
+        return str(missing_data_path)
     
     def plot_training_curves(self, train_losses: List[List[float]], 
                            val_losses: List[List[float]], 

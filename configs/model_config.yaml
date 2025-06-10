@@ -4,6 +4,16 @@ project:
   description: "Neural network for house price prediction with enhanced modularity"
   version: "2.0"
 
+# Pipeline configuration
+pipeline:
+  mode: "train" # Options: "train" or "grid_search"
+
+# Grid Search Demo configuration
+grid_search_demo:
+  output_dir: "data/output/grid_search_demo" # Output directory
+  n_folds: 3 # Number of folds for cross-validation
+  optimization_metric: "val_mse" # Metric to optimize
+
 # Data Configuration
 data:
   csv_path: "../data/input/data.csv"
@@ -61,6 +71,17 @@ model:
       patience: 50
       min_delta: 0.001
       restore_best_weights: true
+  # Grid search parameters
+  grid_search:
+    optimization_metric: "val_mse" # Options: val_mse, val_mae, val_r2
+    param_grid:
+      hidden_layers: [[64, 32], [128, 64], [128, 64, 32]]
+      dropout_rate: [0.1, 0.2, 0.3]
+      learning_rate: [0.001, 0.0005]
+      batch_size: [16, 32]
+      activation: ["relu", "leaky_relu"]
+      scaler_type: ["standard", "robust"]
+      weight_decay: [0, 0.0001]
 
   # Cross validation
   cross_validation:
@@ -97,6 +118,8 @@ output:
     residuals_plot: true
     feature_importance: true
     model_architecture: true
+    missing_data: true
+    grid_search_results: true
 
 # Logging Configuration
 logging:
