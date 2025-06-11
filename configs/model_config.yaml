@@ -4,15 +4,19 @@ project:
   description: "Neural network for house price prediction with enhanced modularity"
   version: "2.0"
 
+# Pipeline configuration
+pipeline:
+  mode: "grid_search" # Options: "train" or "grid_search"
+
 # Data Configuration
 data:
-  csv_path: "../data/input/data.csv"
+  csv_path: "../data/input/data_lodz.csv"
   encoding: "utf-8"
   separator: null # auto-detect
 
   # Data loading strategy
   loading:
-    total_rows: 58000
+    total_rows: 100 # 58000
     train_ratio: 0.7 # 70% for training
     val_ratio: 0.15 # 15% for validation
     test_ratio: 0.15 # 15% for final testing (verification)
@@ -60,7 +64,17 @@ model:
       enabled: true
       patience: 50
       min_delta: 0.001
-      restore_best_weights: true
+      restore_best_weights: true # Grid search parameters
+  grid_search:
+    optimization_metric: "val_mse" # Options: val_mse, val_mae, val_r2
+    param_grid:
+      hidden_layers: [[64, 32], [128, 64], [128, 64, 32]]
+      dropout_rate: [0.1, 0.2, 0.3]
+      learning_rate: [0.0005, 0.0001, 0.00005, 0.00001]
+      batch_size: [16, 32]
+      activation: ["relu", "leaky_relu"]
+      scaler_type: ["standard", "minmax"]
+      weight_decay: [0, 0.0001] # a way to regularize the model, it penalizes large weights and helps prevent overfitting
 
   # Cross validation
   cross_validation:
@@ -97,6 +111,8 @@ output:
     residuals_plot: true
     feature_importance: true
     model_architecture: true
+    missing_data: true
+    grid_search_results: true
 
 # Logging Configuration
 logging:

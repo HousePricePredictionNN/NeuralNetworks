@@ -10,6 +10,7 @@ import numpy as np
 from src.config.config_manager import ConfigManager
 from src.data.data_loader import DataLoader
 from src.models.neural_network import ModelTrainer
+from src.models.grid_search import GridSearch
 from src.visualization.plotting import ResultsVisualizer
 
 class NeuralNetworkPipeline:
@@ -22,6 +23,7 @@ class NeuralNetworkPipeline:
         self.config = ConfigManager(config_path)
         self.data_loader = DataLoader(self.config)
         self.trainer = ModelTrainer(self.config)
+        self.grid_search = GridSearch(self.config)
         
         # Setup logging
         self.logger = logging.getLogger(__name__)
@@ -46,7 +48,12 @@ class NeuralNetworkPipeline:
             # Step 1: Data preparation
             self.logger.info("Step 1: Preparing data...")
             data_splits = self.data_loader.prepare_data_pipeline()
-              # Step 2: Model training with cross-validation
+            
+            # Visualize missing data
+            raw_data = self.data_loader.load_data()
+            self.visualizer.plot_missing_data(raw_data)
+              
+            # Step 2: Model training with cross-validation
             self.logger.info("Step 2: Training model...")
             
             # Combine train and validation for cross-validation
@@ -94,8 +101,7 @@ class NeuralNetworkPipeline:
                 'output_directory': str(self.output_dir),
                 'execution_time': (datetime.now() - start_time).total_seconds()
             }
-            
-            # Create text summary
+              # Create text summary
             self.visualizer.create_results_summary(results)
             
             return results
@@ -104,8 +110,51 @@ class NeuralNetworkPipeline:
             self.logger.error(f"Pipeline failed: {str(e)}")
             raise
 
+    def run_grid_search(self) -> Dict[str, Any]:
+        self.logger.info("Starting grid search for optimal hyperparameters...")
+        start_time = datetime.now()
+        
+        # Prepare data
+        data_splits = self.data_loader.prepare_data_pipeline()
+        
+        # Visualize missing data
+        raw_data = self.data_loader.load_data()
+        self.visualizer.plot_missing_data(raw_data)
+        
+        # Run grid search
+        grid_search_results = self.grid_search.search(
+            data_splits['X_train'], 
+            data_splits['y_train'],
+            data_splits['X_val'], 
+            data_splits['y_val'],
+            optimization_metric='val_mse'
+        )
+          # Save and visualize results
+        self.grid_search.save_results(self.output_dir)
+        self.grid_search.visualize_results(self.output_dir, self.visualizer)
+        
+        # Create consolidated results
+        results = {
+            'original_shape': data_splits.get('original_shape', 'N/A'),
+            'best_params': grid_search_results['best_params'],
+            'best_score': grid_search_results['best_score'],
+            'total_combinations': grid_search_results['total_combinations'],
+            'completed_combinations': grid_search_results['completed_combinations'],
+            'output_directory': str(self.output_dir),
+            'execution_time': (datetime.now() - start_time).total_seconds()
+        }
+        
+        self.logger.info(f"Grid search completed in {results['execution_time']:.2f} seconds")
+        self.logger.info(f"Best parameters: {results['best_params']}")
+        self.logger.info(f"Best score: {results['best_score']}")
+        
+        return results
+
 def main():
     """Main function to run the neural network pipeline"""
+    
+    # Config path - could be set as an environment variable or hardcoded
+    config_path = "configs/model_config.yaml"
     
     # Setup logging
     logging.basicConfig(
@@ -117,12 +166,24 @@ def main():
     )
     
     try:
-        # Initialize and run pipeline
-        pipeline = NeuralNetworkPipeline()
-        results = pipeline.run_complete_pipeline()
+        # Initialize pipeline
+        pipeline = NeuralNetworkPipeline(config_path=config_path)
         
-        print("\nPipeline completed successfully!")
-        print(f"Results saved to: {results['output_directory']}")
+        # Get pipeline mode from config
+        pipeline_mode = pipeline.config.get('pipeline.mode', 'train')
+        
+        # Run in selected mode based on configuration
+        if pipeline_mode == 'grid_search':
+            logging.info("Running grid search mode")
+            results = pipeline.run_grid_search()
+            print("\nGrid search completed successfully!")
+            print(f"Results saved to: {results['output_directory']}")
+            print(f"Best parameters: {results['best_params']}")
+        else:
+            logging.info("Running standard training mode")
+            results = pipeline.run_complete_pipeline()
+            print("\nPipeline completed successfully!")
+            print(f"Results saved to: {results['output_directory']}")
         
     except Exception as e:
         logging.error(f"Pipeline failed: {str(e)}")
