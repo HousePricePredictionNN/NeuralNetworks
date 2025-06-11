@@ -16,12 +16,14 @@ import time
 class NeuralNetwork(nn.Module):
     """
     Enhanced neural network with configurable architecture using Sequential
+    Now supports embedding layers for high-cardinality categorical features.
     """
 
-    def __init__(self, input_size: int, config_manager):
+    def __init__(self, input_size: int, config_manager, embedding_info: dict = None):
         super(NeuralNetwork, self).__init__()
         self.config = config_manager
         self.input_size = input_size
+        self.embedding_info = embedding_info or {}
 
         # Get architecture parameters
         hidden_layers = self.config.get(
@@ -42,9 +44,20 @@ class NeuralNetwork(nn.Module):
         else:
             activation_fn = nn.ReLU(True)
 
+        # Embedding layers for high-cardinality categoricals
+        self.embeddings = nn.ModuleDict()
+        embedding_output_dim = self.config.get("model.architecture.embedding_dim", 8)
+        total_embedding_dim = 0
+        for col, info in (self.embedding_info or {}).items():
+            num_embeddings = info["num_embeddings"]
+            # Use min(50, num_embeddings//2) as default embedding dim if not set
+            emb_dim = min(embedding_output_dim, max(2, num_embeddings // 2))
+            self.embeddings[col] = nn.Embedding(num_embeddings, emb_dim)
+            total_embedding_dim += emb_dim
+
         # Build Sequential model
         layers = []
-        current_size = input_size
+        current_size = input_size + total_embedding_dim
 
         # Hidden layers
         for hidden_size in hidden_layers:
@@ -76,9 +89,31 @@ class NeuralNetwork(nn.Module):
                         module.weight, mode="fan_in", nonlinearity="relu"
                     )
                 nn.init.constant_(module.bias, 0)
+        for emb in self.embeddings.values():
+            nn.init.xavier_uniform_(emb.weight)
 
     def forward(self, x):
-        """Forward pass through the network"""
+        """Forward pass through the network, with embedding support"""
+        if self.embeddings:
+            # x is expected to be a tensor or numpy array
+            # Split x into dense and embedding index parts
+            dense_x = x
+            emb_list = []
+            for col, emb in self.embeddings.items():
+                col_idx = self.embedding_info[col]["col_idx"]
+                emb_input = x[:, col_idx].long()
+                emb_list.append(emb(emb_input))
+            if emb_list:
+                emb_cat = torch.cat(emb_list, dim=1)
+                # Remove embedding index columns from dense_x
+                dense_mask = [
+                    i
+                    for i in range(x.shape[1])
+                    if i
+                    not in [self.embedding_info[c]["col_idx"] for c in self.embeddings]
+                ]
+                dense_x = x[:, dense_mask]
+                x = torch.cat([dense_x, emb_cat], dim=1)
         return self.model(x)
 
 
@@ -93,9 +128,11 @@ class ModelTrainer:
         self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
         self.logger.info(f"Using device: {self.device}")
 
-    def create_model(self, input_size: int) -> NeuralNetwork:
-        """Create model instance"""
-        model = NeuralNetwork(input_size, self.config)
+    def create_model(
+        self, input_size: int, embedding_info: dict = None
+    ) -> NeuralNetwork:
+        """Create model instance with embedding info"""
+        model = NeuralNetwork(input_size, self.config, embedding_info)
         return model.to(self.device)
 
     def train_single_fold(
@@ -243,8 +280,10 @@ class ModelTrainer:
             "training_time": training_time,
         }
 
-    def cross_validate(self, X: np.ndarray, y: np.ndarray) -> Dict[str, Any]:
-        """Perform cross-validation training"""
+    def cross_validate(
+        self, X: np.ndarray, y: np.ndarray, embedding_info: dict = None
+    ) -> Dict[str, Any]:
+        """Perform cross-validation training with embedding info"""
         cv_enabled = self.config.get("model.cross_validation.enabled", True)
         n_folds = self.config.get("model.cross_validation.folds", 5)
 
@@ -254,7 +293,7 @@ class ModelTrainer:
             X_train, X_val = X[:split_idx], X[split_idx:]
             y_train, y_val = y[:split_idx], y[split_idx:]
 
-            model = self.create_model(X.shape[1])
+            model = self.create_model(X.shape[1], embedding_info)
             result = self.train_single_fold(model, X_train, y_train, X_val, y_val)
 
             return {
@@ -286,7 +325,7 @@ class ModelTrainer:
             y_train_fold, y_val_fold = y[train_idx], y[val_idx]
 
             # Create new model for each fold
-            model = self.create_model(X.shape[1])
+            model = self.create_model(X.shape[1], embedding_info)
 
             # Train model
             result = self.train_single_fold(

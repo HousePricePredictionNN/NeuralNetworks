@@ -65,8 +65,7 @@ class ConfigManager:
         ]
         if abs(sum(ratios) - 1.0) > 0.001:
             raise ValueError(f"Data split ratios must sum to 1.0, got {sum(ratios)}")
-            
-        # Set defaults for missing data plot configuration if not present
+              # Set defaults for missing data plot configuration if not present
         if self.get('output.plots.missing_data') is None:
             self.set('output.plots.missing_data', True)
     
@@ -101,8 +100,8 @@ class ConfigManager:
         """Get absolute path to data file"""
         csv_path = self.get('data.csv_path')
         if not os.path.isabs(csv_path):
-            # Make relative to project root
-            project_root = Path(__file__).parent.parent
+            # Make relative to project root (go up two levels from src/config/)
+            project_root = Path(__file__).parent.parent.parent
             return project_root / csv_path
         return Path(csv_path)
     
