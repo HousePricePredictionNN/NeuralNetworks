@@ -65,6 +65,10 @@ class ConfigManager:
         ]
         if abs(sum(ratios) - 1.0) > 0.001:
             raise ValueError(f"Data split ratios must sum to 1.0, got {sum(ratios)}")
+            
+        # Set defaults for missing data plot configuration if not present
+        if self.get('output.plots.missing_data') is None:
+            self.set('output.plots.missing_data', True)
     
     def get(self, key_path: str, default: Any = None) -> Any:
         """
