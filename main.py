@@ -129,10 +129,9 @@ class NeuralNetworkPipeline:
             data_splits['y_val'],
             optimization_metric='val_mse'
         )
-        
-        # Save and visualize results
+          # Save and visualize results
         self.grid_search.save_results(self.output_dir)
-        self.grid_search.visualize_results(self.output_dir)
+        self.grid_search.visualize_results(self.output_dir, self.visualizer)
         
         # Create consolidated results
         results = {

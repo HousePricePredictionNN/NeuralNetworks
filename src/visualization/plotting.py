@@ -30,9 +30,6 @@ class ResultsVisualizer:
         if not self.config.get('output.plots.missing_data', True):
             return ""
         
-        import pandas as pd
-        import seaborn as sns
-        
         # Create figure with two subplots
         fig, ax,  = plt.subplots(1, 1, figsize=(12, 10))
         
@@ -173,6 +170,63 @@ class ResultsVisualizer:
         self.logger.info(f"Predictions plot saved to {predictions_path}")
         return str(predictions_path)
     
+    def plot_grid_search_results(self, results_df: pd.DataFrame) -> List[str]:
+        """Create simple visualizations of grid search results"""
+        saved_paths = []
+        
+        if not self.config.get('output.plots.grid_search', True):
+            return saved_paths
+        
+        try:
+            # 1. Simple performance plot - Top 10 combinations
+            top_results = results_df.nsmallest(10, 'val_mse')
+            
+            fig, ax = plt.subplots(figsize=(12, 6))
+            bars = ax.bar(range(len(top_results)), top_results['val_mse'], color='lightcoral')
+            
+            # Add value labels on bars
+            for i, v in enumerate(top_results['val_mse']):
+                ax.text(i, v + 0.001, f'{v:.3f}', ha='center', va='bottom')
+            
+            ax.set_xlabel('Parameter Combination Rank')
+            ax.set_ylabel('Validation MSE')
+            ax.set_title('Top 10 Grid Search Results')
+            ax.set_xticks(range(len(top_results)))
+            ax.set_xticklabels([f'#{i+1}' for i in range(len(top_results))])
+            ax.grid(axis='y', alpha=0.3)
+            
+            plt.tight_layout()
+            top_path = self.output_dir / 'grid_search_top_results.png'
+            plt.savefig(top_path, dpi=300, bbox_inches='tight')
+            plt.close()
+            saved_paths.append(str(top_path))
+            
+            # 2. Learning rate effect (if learning_rate is in results)
+            if 'learning_rate' in results_df.columns:
+                fig, ax = plt.subplots(figsize=(10, 6))
+                
+                # Group by learning rate and get mean MSE
+                lr_performance = results_df.groupby('learning_rate')['val_mse'].mean().sort_index()
+                
+                ax.semilogx(lr_performance.index, lr_performance.values, 'o-', linewidth=2, markersize=8)
+                ax.set_xlabel('Learning Rate')
+                ax.set_ylabel('Average Validation MSE')
+                ax.set_title('Learning Rate vs Model Performance')
+                ax.grid(True, alpha=0.3)
+                
+                plt.tight_layout()
+                lr_path = self.output_dir / 'grid_search_learning_rate.png'
+                plt.savefig(lr_path, dpi=300, bbox_inches='tight')
+                plt.close()
+                saved_paths.append(str(lr_path))
+            
+            self.logger.info(f"Grid search visualizations saved: {len(saved_paths)} plots")
+            
+        except Exception as e:
+            self.logger.error(f"Error creating grid search visualizations: {str(e)}")
+        
+        return saved_paths
+
     def create_results_summary(self, results):
         """Create a simple but comprehensive text summary of training results"""
         summary_path = self.output_dir / 'results_summary.txt'

@@ -6,19 +6,19 @@ Handles hyperparameter optimization through grid search
 import logging
 import itertools
 import time
+import traceback
 import numpy as np
 import pandas as pd
 from pathlib import Path
-from typing import Dict, List, Any, Tuple, Optional
+from typing import Dict, List, Any, Tuple
 import torch
 import copy
 from tqdm import tqdm
 from sklearn.metrics import mean_absolute_error, mean_squared_error, r2_score
 from sklearn.preprocessing import StandardScaler, RobustScaler, MinMaxScaler
-from sklearn.model_selection import KFold
 
 # Import custom modules
-from src.models.neural_network import NeuralNetwork, ModelTrainer
+from src.models.neural_network import ModelTrainer
 
 
 class GridSearch:
@@ -59,10 +59,19 @@ class GridSearch:
 
     def _count_combinations(self, param_grid: Dict[str, List[Any]]) -> int:
         """Count total number of parameter combinations"""
-        return np.prod([len(values) for values in param_grid.values()])
+        return int(np.prod([len(values) for values in param_grid.values()]))
     
     def _apply_params(self, params: Dict[str, Any]):
         """Apply parameters to the configuration manager"""
+        # Check if params is None or empty
+        if params is None:
+            self.logger.warning("No parameters to apply - params is None")
+            return
+        
+        if not isinstance(params, dict):
+            self.logger.warning(f"Invalid params type: {type(params)}. Expected dict.")
+            return
+        
         # Set model architecture parameters
         if "hidden_layers" in params:
             self.config.set("model.architecture.hidden_layers", params["hidden_layers"])
@@ -135,26 +144,46 @@ class GridSearch:
             X_val_scaled = X_val
             y_val_scaled = y_val
             y_scaler = None
-        
+
         # Create and train model
         model = self.trainer.create_model(X_train.shape[1])
+
         training_results = self.trainer.train_single_fold(
             model, X_train_scaled, y_train_scaled, X_val_scaled, y_val_scaled
         )
         
         # Get metrics on validation set
-        metrics, _ = self.trainer.evaluate_model(
-            training_results['best_model'],
+        raw_metrics, _ = self.trainer.evaluate_model(
+            training_results['model'], 
             X_val_scaled,
             y_val_scaled,
             y_scaler
         )
         
+        # Map metrics to expected keys for grid search
+        metrics = {
+            "val_mse": raw_metrics.get("mse", 0.0) if isinstance(raw_metrics, dict) else raw_metrics[0],
+            "val_mae": raw_metrics.get("mae", 0.0) if isinstance(raw_metrics, dict) else raw_metrics[1], 
+            "val_r2": raw_metrics.get("r2", 0.0) if isinstance(raw_metrics, dict) else raw_metrics[2],
+            "val_rmse": raw_metrics.get("rmse", 0.0) if isinstance(raw_metrics, dict) else raw_metrics[3],
+            "val_mape": raw_metrics.get("mape", 0.0) if isinstance(raw_metrics, dict) else raw_metrics[4]
+        }
+        
         # Record execution time
         execution_time = time.time() - start_time
-        metrics["execution_time"] = execution_time
-          # Return results
-        return params, metrics
+        metrics["execution_time"] = float(execution_time)
+        
+        # Ensure all metric values are floats
+        float_metrics = {}
+        for key, value in metrics.items():
+            try:
+                float_metrics[key] = float(value)
+            except (ValueError, TypeError):
+                self.logger.warning(f"Could not convert metric {key} to float: {value}")
+                float_metrics[key] = 0.0
+        
+        # Return results
+        return params, float_metrics
     
     def search(self, X_train: np.ndarray, y_train: np.ndarray, 
                X_val: np.ndarray, y_val: np.ndarray,
@@ -187,7 +216,8 @@ class GridSearch:
         # Generate all parameter combinations
         keys = list(param_grid.keys())
         values = list(param_grid.values())
-          # Main grid search loop
+        
+        # Main grid search loop
         progress_bar = tqdm(total=total_combinations, desc="Grid Search Progress")
         
         for combination in itertools.product(*values):
@@ -201,6 +231,20 @@ class GridSearch:
                 # Evaluate parameters
                 params, metrics = self._evaluate_params(params, X_train, y_train, X_val, y_val)
                 
+                # Validate metrics
+                if not isinstance(metrics, dict):
+                    self.logger.error(f"Invalid metrics type: {type(metrics)}")
+                    progress_bar.update(1)
+                    continue
+                
+                # Check for required metrics
+                required_metrics = ["val_mse", "val_mae", "val_r2"]
+                missing_metrics = [m for m in required_metrics if m not in metrics]
+                if missing_metrics:
+                    self.logger.error(f"Missing metrics: {missing_metrics}")
+                    progress_bar.update(1)
+                    continue
+                
                 # Determine score based on optimization metric
                 if optimization_metric == "val_r2":
                     score = -metrics["val_r2"]  # Negate for maximization
@@ -208,6 +252,12 @@ class GridSearch:
                     score = metrics["val_mae"]
                 else:  # Default to MSE
                     score = metrics["val_mse"]
+                
+                # Validate score
+                if not isinstance(score, (int, float)) or np.isnan(score) or np.isinf(score):
+                    self.logger.error(f"Invalid score: {score} for params: {params}")
+                    progress_bar.update(1)
+                    continue
                 
                 # Check if this is the best score
                 if score < self.best_score:
@@ -217,7 +267,8 @@ class GridSearch:
                 # Store results
                 result = {**params, **metrics}
                 self.results.append(result)
-                  # Log results
+                
+                # Log results  
                 self.logger.info(f"Parameters: {params}")
                 self.logger.info(f"Metrics: MSE={metrics['val_mse']:.4f}, MAE={metrics['val_mae']:.4f}, R²={metrics['val_r2']:.4f}")
                 self.logger.info(f"Best score so far: {self.best_score:.4f} (lower is better)")
@@ -228,15 +279,27 @@ class GridSearch:
                 
             except Exception as e:
                 self.logger.error(f"Error evaluating parameters {params}: {str(e)}")
+                import traceback
+                self.logger.error(f"Full traceback: {traceback.format_exc()}")
                 progress_bar.update(1)
-        
+
         progress_bar.close()
         
-        # Convert results to DataFrame
+        # Check if we found any valid results
+        if not self.results:
+            self.logger.error("No parameter combinations were successfully evaluated!")
+            raise RuntimeError("Grid search failed - no valid parameter combinations found")
+        
+        self.logger.info(f"Grid search completed successfully!")
+        self.logger.info(f"Total valid results: {len(self.results)}")
+        self.logger.info(f"Best score: {self.best_score:.6f}")
+        self.logger.info(f"Best parameters: {self.best_params}")
+          # Convert results to DataFrame
         results_df = pd.DataFrame(self.results)
         
         # Apply best parameters to config
-        self._apply_params(self.best_params)
+        if self.best_params:
+            self._apply_params(self.best_params)
         
         # Return best parameters and additional information
         return {
@@ -268,20 +331,20 @@ class GridSearch:
         # Sort by the optimization metric
         if "val_mse" in results_df.columns:
             results_df = results_df.sort_values(by="val_mse")
-        
-        # Save to CSV
+          # Save to CSV
         output_path = output_dir / "grid_search_results.csv"
         results_df.to_csv(output_path, index=False)
         self.logger.info(f"Grid search results saved to {output_path}")
         
         return str(output_path)
-        
-    def visualize_results(self, output_dir: Path) -> Dict[str, str]:
+    
+    def visualize_results(self, output_dir: Path, visualizer=None) -> Dict[str, str]:
         """
-        Create visualizations of grid search results
+        Create simple visualizations of grid search results using the plotting module
         
         Args:
             output_dir: Directory to save visualizations
+            visualizer: ResultsVisualizer instance (optional)
             
         Returns:
             Dictionary of paths to saved visualizations
@@ -289,103 +352,21 @@ class GridSearch:
         if not self.results:
             self.logger.warning("No grid search results to visualize")
             return {}
-            
-        import matplotlib.pyplot as plt
-        import seaborn as sns
         
-        results_df = pd.DataFrame(self.results)
         saved_paths = {}
         
-        # 1. Parameter importance plot
         try:
-            plt.figure(figsize=(12, 8))
+            results_df = pd.DataFrame(self.results)
             
-            param_columns = list(self.define_param_grid().keys())
-            param_columns = [p for p in param_columns if p in results_df.columns]
-            
-            correlations = []
-            for param in param_columns:
-                # For non-numeric parameters, create dummy variables
-                if results_df[param].dtype == 'object':
-                    dummies = pd.get_dummies(results_df[param], prefix=param)
-                    for col in dummies.columns:
-                        corr = np.abs(dummies[col].corr(results_df['val_mse']))
-                        correlations.append((col, corr))
-                else:
-                    corr = np.abs(results_df[param].corr(results_df['val_mse']))
-                    correlations.append((param, corr))
-            
-            # Sort by correlation
-            correlations.sort(key=lambda x: x[1], reverse=True)
-            
-            # Plot barplot
-            params, corrs = zip(*correlations)
-            plt.barh(range(len(params)), corrs, align='center')
-            plt.yticks(range(len(params)), params)
-            plt.xlabel('Absolute Correlation with MSE')
-            plt.title('Parameter Importance')
-            plt.tight_layout()
-            
-            # Save figure
-            param_importance_path = output_dir / "param_importance.png"
-            plt.savefig(param_importance_path, dpi=300, bbox_inches='tight')
-            plt.close()
-            saved_paths["param_importance"] = str(param_importance_path)
-            
-        except Exception as e:
-            self.logger.error(f"Error creating parameter importance plot: {str(e)}")
-        
-        # 2. Learning rate vs. performance
-        if 'learning_rate' in results_df.columns:
-            try:
-                plt.figure(figsize=(10, 6))
-                sns.lineplot(x='learning_rate', y='val_mse', data=results_df, 
-                           estimator='mean', err_style='band', markers=True)
-                plt.xscale('log')
-                plt.title('Learning Rate vs. MSE')
-                plt.xlabel('Learning Rate')
-                plt.ylabel('Validation MSE')
+            if visualizer:
+                # Use the plotting module for visualization
+                plot_paths = visualizer.plot_grid_search_results(results_df)
+                for i, path in enumerate(plot_paths):
+                    saved_paths[f"plot_{i+1}"] = path
+            else:
+                self.logger.info("No visualizer provided, skipping visualization")
                 
-                # Save figure
-                lr_path = output_dir / "learning_rate_vs_mse.png"
-                plt.savefig(lr_path, dpi=300, bbox_inches='tight')
-                plt.close()
-                saved_paths["learning_rate"] = str(lr_path)
-                
-            except Exception as e:
-                self.logger.error(f"Error creating learning rate plot: {str(e)}")
-        
-        # 3. Top parameters performance comparison
-        try:
-            # Get top 10 parameter combinations
-            top_results = results_df.nsmallest(10, 'val_mse')
-            
-            plt.figure(figsize=(12, 8))
-            x = range(len(top_results))
-            plt.bar(x, top_results['val_mse'])
-            plt.xticks(x, [f"{i+1}" for i in x], rotation=45)
-            plt.title('Top 10 Parameter Combinations')
-            plt.xlabel('Combination Rank')
-            plt.ylabel('Validation MSE')
-            
-            # Add parameter details as text
-            for i, (_, row) in enumerate(top_results.iterrows()):
-                hidden_layers = str(row.get('hidden_layers', '')).replace(',', '-')
-                act = str(row.get('activation', ''))[:4]
-                lr = row.get('learning_rate', '')
-                bs = row.get('batch_size', '')
-                text = f"L:{hidden_layers}, A:{act}, LR:{lr}, BS:{bs}"
-                plt.text(i, row['val_mse'], text, ha='center', va='bottom', rotation=90, fontsize=8)
-            
-            plt.tight_layout()
-            
-            # Save figure
-            top_params_path = output_dir / "top_parameter_combinations.png"
-            plt.savefig(top_params_path, dpi=300, bbox_inches='tight')
-            plt.close()
-            saved_paths["top_params"] = str(top_params_path)
-            
         except Exception as e:
-            self.logger.error(f"Error creating top parameters plot: {str(e)}")
+            self.logger.error(f"Error creating grid search visualizations: {str(e)}")
         
         return saved_paths
