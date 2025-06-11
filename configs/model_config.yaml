@@ -6,7 +6,7 @@ project:
 
 # Pipeline configuration
 pipeline:
-  mode: "train" # Options: "train" or "grid_search"
+  mode: "grid_search" # Options: "train" or "grid_search"
 
 # Grid Search Demo configuration
 grid_search_demo:
@@ -22,7 +22,7 @@ data:
 
   # Data loading strategy
   loading:
-    total_rows: 58000
+    total_rows: 10000 # 58000
     train_ratio: 0.7 # 70% for training
     val_ratio: 0.15 # 15% for validation
     test_ratio: 0.15 # 15% for final testing (verification)
@@ -80,8 +80,8 @@ model:
       learning_rate: [0.001, 0.0005]
       batch_size: [16, 32]
       activation: ["relu", "leaky_relu"]
-      scaler_type: ["standard", "robust"]
-      weight_decay: [0, 0.0001]
+      scaler_type: ["standard", "minmax"]
+      weight_decay: [0, 0.0001] # a way to regularize the model, it penalizes large weights and helps prevent overfitting
 
   # Cross validation
   cross_validation:
