@@ -22,7 +22,7 @@ data:
 
   # Data loading strategy
   loading:
-    total_rows: 10000 # 58000
+    total_rows: 58000
     train_ratio: 0.7 # 70% for training
     val_ratio: 0.15 # 15% for validation
     test_ratio: 0.15 # 15% for final testing (verification)
