@@ -10,54 +10,48 @@ pipeline:
 
 # Data Configuration
 data:
-  csv_path: "../data/input/data_lodz.csv"
+  csv_path: "data/input/data_lodz.csv"
   encoding: "utf-8"
   separator: null # auto-detect
 
   # Data loading strategy
   loading:
-    total_rows: 58000
+    total_rows: 58850
     train_ratio: 0.7 # 70% for training
     val_ratio: 0.15 # 15% for validation
     test_ratio: 0.15 # 15% for final testing (verification)
     shuffle_data: true
-    random_state: 42
-
-    # Missing data handling
-    missing_data:
-        strategy: "median" # mean, median, mode, drop
-        threshold: 0.7 # drop columns with >70% missing values  # Feature engineering
-    preprocessing:
-        normalize_features: true
-        scaler_type: "standard" # standard, robust, minmax
-        handle_outliers: true # Only removes extreme price outliers
-
-    # Categorical encoding configuration
-    categorical:
-        # Columns to one-hot encode (low cardinality)
-        onehot_columns:
-            - "city"
-            - "property_type"
-            - "ownership_type"
-            - "rooms" # Number of rooms one-hot encoded
-
-
-
-    # Columns to drop (data leakage prevention and high missing data)
-    columns_to_drop:
-        - "adress"
-        - "voivodeship"
-
-        # Data leakage columns
-        - "price_per_sqm"
-        - "primary_price"
-        - "secondary_price"
-
-        # High missing data columns
-        - "latitude"
-        - "longitude"
-        - "poi_count"
-        - "has_storage"
+    random_state: 42  # Missing data handling
+  missing_data:
+    strategy: "median" # mean, median, mode, drop
+    threshold: 0.7 # drop columns with >70% missing values
+    
+  # Feature engineering
+  preprocessing:
+    normalize_features: true
+    scaler_type: "standard" # standard, robust, minmax
+    handle_outliers: true # Only removes extreme price outliers
+  # Categorical encoding configuration
+  categorical:
+    # Columns to one-hot encode (low cardinality)
+    onehot_columns:
+      - "city"
+      - "property_type"
+      - "ownership_type"
+      - "rooms" # Number of rooms one-hot encoded
+  # Columns to drop (data leakage prevention and high missing data)
+  columns_to_drop:
+    - "adress"
+    - "voivodeship"
+    # Data leakage columns
+    - "price_per_sqm"
+    - "primary_price"
+    - "secondary_price"
+    # High missing data columns
+    - "latitude"
+    - "longitude"
+    - "poi_count"
+    - "has_storage"
 
 # Model Configuration
 model:
@@ -70,7 +64,9 @@ model:
       enabled: true
       patience: 50
       min_delta: 0.001
-      restore_best_weights: true # Grid search parameters
+      restore_best_weights: true
+      
+  # Grid search parameters
   grid_search:
     optimization_metric: "val_mse" # Options: val_mse, val_mae, val_r2
     param_grid:
@@ -84,32 +80,33 @@ model:
 
     # Cross validation
     cross_validation:
-        enabled: true
-        folds: 5
-        scoring: "neg_mean_absolute_error"
+      enabled: true
+      folds: 5
+      scoring: "neg_mean_absolute_error"
 
-    # Neural Network Architecture
-    architecture:
-        hidden_layers: [128, 64, 32, 16]
-        dropout_rate: 0.3
-        activation: "relu"
-        output_activation: "linear"
-    # Loss and Optimization
-    optimization:
-        loss_function: "mse"
-        optimizer: "adam"
-        optimizer_params:
-            weight_decay: 0.0001
-        metrics: ["mae", "mse", "r2"]
+  # Neural Network Architecture
+  architecture:
+    hidden_layers: [128, 64, 32, 16]
+    dropout_rate: 0.3
+    activation: "relu"
+    output_activation: "linear"
+    
+  # Loss and Optimization
+  optimization:
+    loss_function: "mse"
+    optimizer: "adam"
+    optimizer_params:
+      weight_decay: 0.0001
+    metrics: ["mae", "mse", "r2"]
 
 # Output Configuration
 output:
-    results_dir: "data/output"
-    save_model: true
-    save_predictions: true
-    save_plots: true
-    save_config: true
-
+  results_dir: "data/output"
+  save_model: true
+  save_predictions: true
+  save_plots: true
+  save_config: true
+  
   # Plotting options
   plots:
     loss_curve: true
