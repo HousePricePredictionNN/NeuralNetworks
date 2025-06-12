@@ -13,9 +13,9 @@ data:
   # Data loading strategy
   loading:
     total_rows: 58000
-    train_ratio: 0.7 # 70% for training
-    val_ratio: 0.15 # 15% for validation
-    test_ratio: 0.15 # 15% for final testing (verification)
+    train_ratio: 0.8 # 70% for training
+    val_ratio: 0.0 # 15% for validation
+    test_ratio: 0.2 # 15% for final testing (verification)
     shuffle_data: true
     random_state: 42
 
@@ -30,6 +30,34 @@ data:
     handle_outliers: true # Only removes extreme price outliers
 
   # Columns to drop (data leakage prevention and high missing data)
+  columns_to_add:
+    - "area_sqm"
+    - "rooms"
+    - "floor"
+    - "floor_count"
+    - "build_year"
+    - "distance_to_center"
+    - "distance_to_school"
+    - "distance_to_healthcare"
+    - "distance_to_post_office"
+    - "distance_to_kindergarten"
+    - "distance_to_restaurant"
+    - "distance_to_college"
+    - "distance_to_pharmacy"
+    - "has_parking"
+    - "has_balcony"
+    - "has_elevator"
+    - "has_security"
+    - "price"
+    - "listing_year"
+    - "listing_month"
+    - "inflation"
+    - "housing_inflation"
+    - "avg_salary"
+    - "population"
+    - "unemployment"
+    - "interest_rate"
+
   columns_to_drop:
     # Categorical columns
     - "city"

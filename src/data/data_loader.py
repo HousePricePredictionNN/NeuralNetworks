@@ -62,7 +62,8 @@ class DataLoader:
         original_shape = data.shape
         
         # Step 1: Drop configured columns
-        data = self._drop_configured_columns(data)
+        data = self._select_configured_columns(data)
+
         
         # Step 2: Handle data types
         data = self._convert_data_types(data)
@@ -79,16 +80,16 @@ class DataLoader:
         
         self.logger.info(f"Preprocessing complete: {original_shape} -> {data.shape}")
         return data
-    
-    def _drop_configured_columns(self, data: pd.DataFrame) -> pd.DataFrame:
-        """Drop columns specified in configuration"""
-        columns_to_drop = self.config.get('data.columns_to_drop', [])
-        existing_cols_to_drop = [col for col in columns_to_drop if col in data.columns]
-        
-        if existing_cols_to_drop:
-            data = data.drop(columns=existing_cols_to_drop)
-            self.logger.info(f"Dropped {len(existing_cols_to_drop)} columns from config")
-            
+
+    def _select_configured_columns(self, data: pd.DataFrame) -> pd.DataFrame:
+        """Select columns specified in configuration"""
+        columns_to_add = self.config.get('data.columns_to_add', [])
+        existing_cols_to_add = [col for col in columns_to_add if col in data.columns]
+
+        if existing_cols_to_add:
+            data = data[existing_cols_to_add]
+            self.logger.info(f"Selected {len(existing_cols_to_add)} columns from config")
+
         return data
     
     def _convert_data_types(self, data: pd.DataFrame) -> pd.DataFrame:
@@ -96,7 +97,7 @@ class DataLoader:
         # Convert comma decimals to proper float format
         for col in data.select_dtypes(include=['object']).columns:
             try:
-                if data[col].astype(str).str.contains(',').any():
+                if data[col].astype(str).str.contains(','):
                     self.logger.debug(f"Converting comma decimals in column: {col}")
                     data[col] = data[col].astype(str).str.replace(',', '.').replace('nan', np.nan)
                     data[col] = pd.to_numeric(data[col], errors='coerce')
@@ -188,8 +189,8 @@ class DataLoader:
         """Create train/validation/test splits with proper shuffling"""
         # Get split ratios
         train_ratio = self.config.get('data.loading.train_ratio', 0.7)
-        val_ratio = self.config.get('data.loading.val_ratio', 0.15)
-        test_ratio = self.config.get('data.loading.test_ratio', 0.15)
+        val_ratio = self.config.get('data.loading.val_ratio', 0.0)
+        test_ratio = self.config.get('data.loading.test_ratio', 0.3)
         
         shuffle_data = self.config.get('data.loading.shuffle_data', True)
         random_state = self.config.get('data.loading.random_state', 42)
@@ -207,15 +208,19 @@ class DataLoader:
             shuffle=shuffle_data
         )
         
-        # Second split: separate train and validation
-        val_size_adjusted = val_ratio / train_val_size
-        
-        X_train, X_val, y_train, y_val = train_test_split(
-            X_train_val, y_train_val,
-            test_size=val_size_adjusted,
-            random_state=random_state,
-            shuffle=shuffle_data
-        )
+        # Second split: separate train and validation only if val_ratio > 0
+        if val_ratio > 0:
+            val_size_adjusted = val_ratio / train_val_size
+            X_train, X_val, y_train, y_val = train_test_split(
+                X_train_val, y_train_val,
+                test_size=val_size_adjusted,
+                random_state=random_state,
+                shuffle=shuffle_data
+            )
+        else:
+            # Jeśli nie ma zbioru walidacyjnego, używamy całego zbioru train_val jako treningowego
+            X_train, X_val = X_train_val, pd.DataFrame()
+            y_train, y_val = y_train_val, pd.Series()
         
         splits = {
             'X_train': X_train,
@@ -231,14 +236,14 @@ class DataLoader:
             self.logger.info(f"{split_name}: {len(split_data)} samples")
         
         return splits
-    
+
     def normalize_features(self, data_splits: Dict[str, Any]) -> Dict[str, Any]:
         """Normalize features using configured scaler"""
         if not self.config.get('data.preprocessing.normalize_features', True):
             return data_splits
-        
+
         scaler_type = self.config.get('data.preprocessing.scaler_type', 'standard')
-        
+
         # Initialize scaler
         if scaler_type == 'standard':
             scaler_X = StandardScaler()
@@ -253,24 +258,29 @@ class DataLoader:
             self.logger.warning(f"Unknown scaler type: {scaler_type}. Using StandardScaler.")
             scaler_X = StandardScaler()
             scaler_y = StandardScaler()
-        
+
         # Fit scalers on training data
         X_train_scaled = scaler_X.fit_transform(data_splits['X_train'])
         y_train_scaled = scaler_y.fit_transform(data_splits['y_train'].values.reshape(-1, 1)).ravel()
-        
-        # Transform all splits
-        X_val_scaled = scaler_X.transform(data_splits['X_val'])
+
+        # Transform test split
         X_test_scaled = scaler_X.transform(data_splits['X_test'])
-        
-        y_val_scaled = scaler_y.transform(data_splits['y_val'].values.reshape(-1, 1)).ravel()
         y_test_scaled = scaler_y.transform(data_splits['y_test'].values.reshape(-1, 1)).ravel()
-        
+
+        # Transform validation split only if it exists
+        if not data_splits['X_val'].empty:
+            X_val_scaled = scaler_X.transform(data_splits['X_val'])
+            y_val_scaled = scaler_y.transform(data_splits['y_val'].values.reshape(-1, 1)).ravel()
+        else:
+            X_val_scaled = pd.DataFrame()
+            y_val_scaled = pd.Series()
+
         # Store scalers for later use
         self.scalers = {
             'scaler_X': scaler_X,
             'scaler_y': scaler_y
         }
-        
+
         # Update data splits
         normalized_splits = {
             'X_train': X_train_scaled,
@@ -281,7 +291,7 @@ class DataLoader:
             'y_test': y_test_scaled,
             'scalers': self.scalers
         }
-        
+
         self.logger.info(f"Features normalized using {scaler_type} scaler")
         return normalized_splits
     

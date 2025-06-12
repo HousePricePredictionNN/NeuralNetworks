@@ -59,9 +59,9 @@ class ConfigManager:
         
         # Validate ratios sum to 1
         ratios = [
-            self.get('data.loading.train_ratio', 0.7),
-            self.get('data.loading.val_ratio', 0.15),
-            self.get('data.loading.test_ratio', 0.15)
+            self.get('data.loading.train_ratio', 0.8),
+            self.get('data.loading.val_ratio', 0.0),
+            self.get('data.loading.test_ratio', 0.2)
         ]
         if abs(sum(ratios) - 1.0) > 0.001:
             raise ValueError(f"Data split ratios must sum to 1.0, got {sum(ratios)}")
