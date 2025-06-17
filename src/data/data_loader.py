@@ -6,7 +6,7 @@ Handles all data loading, preprocessing, and splitting operations
 import pandas as pd
 import numpy as np
 import logging
-from typing import Tuple, Dict, Any
+from typing import Tuple, Dict, Any, Optional
 from sklearn.model_selection import train_test_split
 from sklearn.preprocessing import StandardScaler, RobustScaler, MinMaxScaler
 from sklearn.impute import SimpleImputer
@@ -291,7 +291,7 @@ class DataLoader:
 
     def split_features_target(
         self, data: pd.DataFrame
-    ) -> Tuple[pd.DataFrame, pd.Series]:
+    ) -> Tuple[pd.DataFrame, Optional[pd.Series]]:
         """
         Split data into features and target
         """
@@ -423,10 +423,12 @@ class DataLoader:
         raw_data = self.load_data()
 
         # Preprocess data
-        processed_data, embedding_info = self.preprocess_data(raw_data)
-
-        # Split features and target
+        processed_data, embedding_info = self.preprocess_data(raw_data)        # Split features and target
         X, y = self.split_features_target(processed_data)
+        
+        # Validate that we have target data for training
+        if y is None:
+            raise ValueError("No target column 'price' found in data. Cannot create training splits.")
 
         # Create train/val/test splits
         data_splits = self.create_data_splits(X, y)
@@ -442,3 +444,120 @@ class DataLoader:
 
         self.logger.info("Data pipeline completed successfully")
         return normalized_splits
+
+    def save_split_datasets_raw(self, output_base_dir: str = "data/splits") -> Dict[str, Any]:
+        """
+        Save training, validation, and test datasets as 3 separate CSV files with RAW data
+        (before normalization but after preprocessing like categorical encoding).
+        Each file contains both features and target values combined.
+        Only saves if the files do not already exist.
+        
+        Args:
+            output_base_dir: Base directory where split files will be created
+            
+        Returns:
+            Dictionary with information about saved datasets
+        """
+        import os
+        
+        # Create base directory if it doesn't exist
+        os.makedirs(output_base_dir, exist_ok=True)
+        
+        self.logger.info("Loading and preprocessing raw data for splitting...")
+        
+        # Load and preprocess data (but don't normalize)
+        raw_data = self.load_data()
+        processed_data, embedding_info = self.preprocess_data(raw_data)
+          # Split features and target
+        X, y = self.split_features_target(processed_data)
+        
+        # Validate that we have target data
+        if y is None:
+            raise ValueError("No target column 'price' found in data. Cannot create training splits.")
+        
+        # Create train/val/test splits (this gives us raw preprocessed data)
+        raw_splits = self.create_data_splits(X, y)
+        
+        # Define the split names and corresponding data
+        splits_info = {
+            'training': {
+                'X': raw_splits['X_train'],
+                'y': raw_splits['y_train']
+            },
+            'validation': {
+                'X': raw_splits['X_val'],
+                'y': raw_splits['y_val']
+            },
+            'test': {
+                'X': raw_splits['X_test'],
+                'y': raw_splits['y_test']
+            }
+        }
+        
+        saved_files = []
+        
+        for split_name, split_data in splits_info.items():
+            # Define file path - single file per split
+            dataset_file = os.path.join(output_base_dir, f'{split_name}_dataset.csv')
+            
+            # Check if file already exists
+            if os.path.exists(dataset_file):
+                self.logger.info(f"Dataset file for '{split_name}' already exists. Skipping...")
+                continue
+            
+            # Convert to DataFrames and combine
+            try:
+                # Handle features (X data) with original column names
+                if hasattr(split_data['X'], 'columns'):
+                    # If it's already a DataFrame
+                    features_df = split_data['X'].copy()
+                else:
+                    # If it's a pandas Series or numpy array, create DataFrame with original column names
+                    if self.feature_names is not None:
+                        features_df = pd.DataFrame(split_data['X'], columns=self.feature_names)
+                    else:
+                        features_df = pd.DataFrame(split_data['X'])
+                
+                # Handle target (y data) - should be pandas Series
+                if hasattr(split_data['y'], 'values'):
+                    # If it's a pandas Series
+                    target_values = split_data['y'].values
+                else:
+                    # If it's a numpy array
+                    target_values = split_data['y']
+                
+                # Add target column to features DataFrame
+                features_df['price'] = target_values
+                
+                # Save the combined dataset
+                features_df.to_csv(dataset_file, index=False)
+                saved_files.append(dataset_file)
+                
+                self.logger.info(f"Saved {split_name} dataset (RAW - before normalization):")
+                self.logger.info(f"  File: {dataset_file}")
+                self.logger.info(f"  Shape: {features_df.shape} (features + target)")
+                self.logger.info(f"  Samples: {len(features_df)}")
+                if self.feature_names:
+                    self.logger.info(f"  Column names preserved: {len(self.feature_names)} features + price")
+                
+            except Exception as e:
+                self.logger.error(f"Error saving {split_name} dataset: {str(e)}")
+                
+        self.logger.info(f"RAW dataset splitting completed. {len(saved_files)} files saved in: {output_base_dir}")
+        self.logger.info("These datasets contain the same splits that will be used for training, but with raw values (before normalization)")
+        
+        # Return summary information
+        return {
+            "original_shape": raw_data.shape,
+            "processed_shape": processed_data.shape,
+            "n_features": X.shape[1],
+            "n_train": len(raw_splits["X_train"]),
+            "n_val": len(raw_splits["X_val"]),
+            "n_test": len(raw_splits["X_test"]),
+            "random_state": self.config.get("data.loading.random_state", 42),
+            "train_ratio": self.config.get("data.loading.train_ratio", 0.8),
+            "val_ratio": self.config.get("data.loading.val_ratio", 0.15),
+            "test_ratio": self.config.get("data.loading.test_ratio", 0.05),
+            "datasets_saved_to": output_base_dir,
+            "saved_files": saved_files
+        }

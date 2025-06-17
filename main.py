@@ -3,6 +3,8 @@ Main orchestration module for the enhanced neural network project
 """
 
 import logging
+import os
+import pandas as pd
 from datetime import datetime
 from typing import Dict, Any
 import numpy as np
@@ -13,6 +15,103 @@ from src.data.data_loader import DataLoader
 from src.models.neural_network import ModelTrainer
 from src.models.grid_search import GridSearch
 from src.visualization.plotting import ResultsVisualizer
+
+
+def save_split_datasets_raw(data_loader: DataLoader, output_base_dir: str = "data/splits"):
+    """
+    Save training, validation, and test datasets as 3 separate CSV files with RAW data
+    (before normalization but after preprocessing like categorical encoding).
+    Each file contains both features and target values combined.
+    Only saves if the files do not already exist.
+    
+    Args:
+        data_loader: DataLoader instance to access data preparation methods
+        output_base_dir: Base directory where split files will be created
+    """
+    logger = logging.getLogger(__name__)
+    
+    # Create base directory if it doesn't exist
+    os.makedirs(output_base_dir, exist_ok=True)
+    
+    logger.info("Loading and preprocessing raw data for splitting...")
+    
+    # Load and preprocess data (but don't normalize)
+    raw_data = data_loader.load_data()
+    processed_data, embedding_info = data_loader.preprocess_data(raw_data)
+    
+    # Split features and target
+    X, y = data_loader.split_features_target(processed_data)
+    
+    # Create train/val/test splits (this gives us raw preprocessed data)
+    raw_splits = data_loader.create_data_splits(X, y)
+    
+    # Get feature names
+    feature_names = data_loader.feature_names
+    
+    # Define the split names and corresponding data
+    splits_info = {
+        'training': {
+            'X': raw_splits['X_train'],
+            'y': raw_splits['y_train']
+        },
+        'validation': {
+            'X': raw_splits['X_val'],
+            'y': raw_splits['y_val']
+        },
+        'test': {
+            'X': raw_splits['X_test'],
+            'y': raw_splits['y_test']
+        }
+    }
+    
+    for split_name, split_data in splits_info.items():
+        # Define file path - single file per split
+        dataset_file = os.path.join(output_base_dir, f'{split_name}_dataset.csv')
+        
+        # Check if file already exists
+        if os.path.exists(dataset_file):
+            logger.info(f"Dataset file for '{split_name}' already exists. Skipping...")
+            continue
+        
+        # Convert to DataFrames and combine
+        try:
+            # Handle features (X data) with original column names
+            if hasattr(split_data['X'], 'columns'):
+                # If it's already a DataFrame
+                features_df = split_data['X'].copy()
+            else:
+                # If it's a pandas Series or numpy array, create DataFrame with original column names
+                if feature_names is not None:
+                    features_df = pd.DataFrame(split_data['X'], columns=feature_names)
+                else:
+                    features_df = pd.DataFrame(split_data['X'])
+            
+            # Handle target (y data) - should be pandas Series
+            if hasattr(split_data['y'], 'values'):
+                # If it's a pandas Series
+                target_values = split_data['y'].values
+            else:
+                # If it's a numpy array
+                target_values = split_data['y']
+            
+            # Add target column to features DataFrame
+            features_df['price'] = target_values
+            
+            # Save the combined dataset
+            features_df.to_csv(dataset_file, index=False)
+            
+            logger.info(f"Saved {split_name} dataset (RAW - before normalization):")
+            logger.info(f"  File: {dataset_file}")
+            logger.info(f"  Shape: {features_df.shape} (features + target)")
+            logger.info(f"  Samples: {len(features_df)}")
+            if feature_names:
+                logger.info(f"  Column names preserved: {len(feature_names)} features + price")
+            
+        except Exception as e:
+            logger.error(f"Error saving {split_name} dataset: {str(e)}")
+            
+    logger.info(f"RAW dataset splitting completed. 3 files saved in: {output_base_dir}")
+    logger.info("These datasets contain the same splits that will be used for training, but with raw values (before normalization)")
 
 
 class NeuralNetworkPipeline:
@@ -65,10 +164,11 @@ class NeuralNetworkPipeline:
             y_train_full = np.concatenate(
                 [data_splits["y_train"], data_splits["y_val"]]
             )
-
+  
             training_results = self.trainer.cross_validate(
                 X_train_full, y_train_full, embedding_info=embedding_info
             )
+
             # Step 3: Final evaluation on test set
             self.logger.info("Step 3: Evaluating on test set...")
             test_metrics, test_predictions = self.trainer.evaluate_model(
@@ -162,6 +262,32 @@ class NeuralNetworkPipeline:
 
         return results
 
+    def prepare_and_save_datasets_only(self) -> Dict[str, Any]:
+        """
+        Prepare data and save split datasets only, without any training.
+        Returns information about the saved datasets.
+        """
+        self.logger.info("Preparing and saving split datasets...")
+        
+        try:
+            # Use DataLoader's new method to save datasets
+            results = self.data_loader.save_split_datasets_raw()
+            
+            self.logger.info("Dataset preparation completed successfully!")
+            self.logger.info(f"3 RAW dataset files saved: training_dataset.csv, validation_dataset.csv, test_dataset.csv")
+            self.logger.info(f"Train samples: {results['n_train']}")
+            self.logger.info(f"Validation samples: {results['n_val']}")
+            self.logger.info(f"Test samples: {results['n_test']}")
+            self.logger.info(f"Features: {results['n_features']} + 1 target column")
+            self.logger.info(f"Random state: {results['random_state']} (ensures consistent splits)")
+            self.logger.info(f"Data flow: {results['original_shape']} -> {results['processed_shape']} -> splits")
+            
+            return results
+            
+        except Exception as e:
+            self.logger.error(f"Dataset preparation failed: {str(e)}")
+            raise
+
 
 def main():
     """Main function to run the neural network pipeline"""
@@ -176,15 +302,23 @@ def main():
         handlers=[logging.StreamHandler()],
     )
 
-    try:
+    try: 
         # Initialize pipeline
         pipeline = NeuralNetworkPipeline(config_path=config_path)
 
         # Get pipeline mode from config
-        pipeline_mode = pipeline.config.get("pipeline.mode", "train")
-
-        # Run in selected mode based on configuration
-        if pipeline_mode == "grid_search":
+        pipeline_mode = pipeline.config.get("pipeline.mode", "train")      
+        if pipeline_mode == "save_datasets":
+            logging.info("Running dataset preparation and saving mode")
+            results = pipeline.prepare_and_save_datasets_only()
+            print("\nDataset preparation completed successfully!")
+            print(f"3 dataset files saved in: {results['datasets_saved_to']}")
+            print(f"  - training_dataset.csv ({results['n_train']} samples)")
+            print(f"  - validation_dataset.csv ({results['n_val']} samples)")
+            print(f"  - test_dataset.csv ({results['n_test']} samples)")
+            print(f"Each file contains {results['n_features']} features + 1 target column")
+            print(f"Random state: {results['random_state']} (ensures consistent splits)")
+        elif pipeline_mode == "grid_search":
             logging.info("Running grid search mode")
             results = pipeline.run_grid_search()
             print("\nGrid search completed successfully!")
