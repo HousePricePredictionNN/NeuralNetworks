@@ -6,7 +6,7 @@ project:
 
 # Pipeline configuration
 pipeline:
-  mode: "save_datasets" # Options: "train", "grid_search", or "save_datasets"
+  mode: "train" # Options: "train", "grid_search", or "save_datasets"
 
 # Data Configuration
 data:
