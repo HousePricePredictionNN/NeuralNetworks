@@ -10,18 +10,24 @@ pipeline:
 
 # Data Configuration
 data:
-  csv_path: "data/input/data_lodz_unified.csv"
+  csv_path: "data/input/data_lodz.csv"
   encoding: "utf-8"
   separator: null # auto-detect
-
   # Data loading strategy
   loading:
     total_rows: 58850
-    train_ratio: 0.75 # 70% for training
+    train_ratio: 0.75 # 70% for trainings
     val_ratio: 0.2 # 15% for validation
     test_ratio: 0.05 # 15% for final testing (verification)
     shuffle_data: true
     random_state: 42
+
+    # Data splitting strategy
+    split_by_year: false # If true, splits data by listing_year instead of randomly
+    year_splits:
+      test_years: [2024, 2025] # Test set years
+      val_years: [2021, 2022, 2023] # Validation set years
+      # Train set will be all remaining years (< 2021)
 
   # Missing data handling
   missing_data:
@@ -61,9 +67,9 @@ data:
 model:
   # Neural Network Architecture
   architecture:
-    hidden_layers: [128, 64, 32, 16]
-    dropout_rate: 0.3
-    activation: "relu"
+    hidden_layers: [512, 256]
+    dropout_rate: 0.05
+    activation: "leaky_relu"
     output_activation: "linear"
 
   # Training parameters
@@ -73,7 +79,7 @@ model:
     learning_rate: 0.001
     early_stopping:
       enabled: true
-      patience: 50
+      patience: 75
       min_delta: 0.001
       restore_best_weights: true
 
@@ -89,7 +95,7 @@ model:
     optimization_metric: "val_mse" # Options: val_mse, val_mae, val_r2
     param_grid:
       hidden_layers: [[256, 128], [512, 256]]
-      dropout_rate: [0.05, 0.1, 0.15]
+      dropout_rate: [0.05, 0.1]
       learning_rate: [0.0005, 0.001]
       batch_size: [32, 64]
       activation: ["relu", "leaky_relu"]

@@ -349,12 +349,81 @@ class DataLoader:
             "y_train": y_train,
             "y_val": y_val,
             "y_test": y_test,
-        }
-
-        # Log split sizes
+        }        # Log split sizes
         for split_name, split_data in splits.items():
             self.logger.info(f"{split_name}: {len(split_data)} samples")
 
+        return splits
+
+    def create_data_splits_by_year(self, X: pd.DataFrame, y: pd.Series, original_data: pd.DataFrame) -> Dict[str, Any]:
+        """Create train/validation/test splits based on listing year"""
+        
+        # Get year split configuration
+        test_years = self.config.get("data.loading.year_splits.test_years", [2024, 2025])
+        val_years = self.config.get("data.loading.year_splits.val_years", [2021, 2022, 2023])
+        
+        self.logger.info(f"Creating year-based data splits:")
+        self.logger.info(f"  Test years: {test_years}")
+        self.logger.info(f"  Validation years: {val_years}")
+        self.logger.info(f"  Training years: all others (< {min(val_years)})")
+        
+        # Check if listing_year column exists
+        if 'listing_year' not in original_data.columns:
+            raise ValueError("listing_year column not found in data. Cannot split by year.")
+        
+        # Get the year data (should be same length as X and y)
+        years = original_data['listing_year'].reset_index(drop=True)
+        
+        # Ensure X and y indices are reset to match years
+        X_reset = X.reset_index(drop=True)
+        y_reset = y.reset_index(drop=True)
+        
+        # Create masks for each split
+        test_mask = years.isin(test_years)
+        val_mask = years.isin(val_years)
+        train_mask = ~(test_mask | val_mask)  # Everything else goes to training
+        
+        # Apply masks to create splits
+        X_test = X_reset[test_mask].reset_index(drop=True)
+        y_test = y_reset[test_mask].reset_index(drop=True)
+        
+        X_val = X_reset[val_mask].reset_index(drop=True)
+        y_val = y_reset[val_mask].reset_index(drop=True)
+        
+        X_train = X_reset[train_mask].reset_index(drop=True)
+        y_train = y_reset[train_mask].reset_index(drop=True)
+        
+        # Check if we have data in each split
+        if len(X_test) == 0:
+            self.logger.warning(f"No test data found for years {test_years}")
+        if len(X_val) == 0:
+            self.logger.warning(f"No validation data found for years {val_years}")
+        if len(X_train) == 0:
+            raise ValueError("No training data found. Check year configuration.")
+        
+        splits = {
+            "X_train": X_train,
+            "X_val": X_val,
+            "X_test": X_test,
+            "y_train": y_train,
+            "y_val": y_val,
+            "y_test": y_test,
+        }
+        
+        # Log split sizes and year distribution
+        for split_name, split_data in splits.items():
+            self.logger.info(f"{split_name}: {len(split_data)} samples")
+        
+        # Log year distribution for verification
+        test_years_found = years[test_mask].unique() if len(X_test) > 0 else []
+        val_years_found = years[val_mask].unique() if len(X_val) > 0 else []
+        train_years_found = years[train_mask].unique() if len(X_train) > 0 else []
+        
+        self.logger.info(f"Year distribution verification:")
+        self.logger.info(f"  Test years found: {sorted(test_years_found)}")
+        self.logger.info(f"  Validation years found: {sorted(val_years_found)}")
+        self.logger.info(f"  Training years found: {sorted(train_years_found)}")
+        
         return splits
 
     def normalize_features(self, data_splits: Dict[str, Any]) -> Dict[str, Any]:
@@ -425,13 +494,19 @@ class DataLoader:
         # Preprocess data
         processed_data, embedding_info = self.preprocess_data(raw_data)        # Split features and target
         X, y = self.split_features_target(processed_data)
-        
-        # Validate that we have target data for training
+          # Validate that we have target data for training
         if y is None:
             raise ValueError("No target column 'price' found in data. Cannot create training splits.")
 
-        # Create train/val/test splits
-        data_splits = self.create_data_splits(X, y)
+        # Create train/val/test splits - choose method based on configuration
+        split_by_year = self.config.get("data.loading.split_by_year", False)
+        
+        if split_by_year:
+            self.logger.info("Using year-based data splitting")
+            data_splits = self.create_data_splits_by_year(X, y, processed_data)
+        else:
+            self.logger.info("Using random data splitting")
+            data_splits = self.create_data_splits(X, y)
 
         # Normalize features
         normalized_splits = self.normalize_features(data_splits)
@@ -470,13 +545,19 @@ class DataLoader:
         processed_data, embedding_info = self.preprocess_data(raw_data)
           # Split features and target
         X, y = self.split_features_target(processed_data)
-        
-        # Validate that we have target data
+          # Validate that we have target data
         if y is None:
             raise ValueError("No target column 'price' found in data. Cannot create training splits.")
         
-        # Create train/val/test splits (this gives us raw preprocessed data)
-        raw_splits = self.create_data_splits(X, y)
+        # Create train/val/test splits - choose method based on configuration
+        split_by_year = self.config.get("data.loading.split_by_year", False)
+        
+        if split_by_year:
+            self.logger.info("Using year-based data splitting for dataset saving")
+            raw_splits = self.create_data_splits_by_year(X, y, processed_data)
+        else:
+            self.logger.info("Using random data splitting for dataset saving")
+            raw_splits = self.create_data_splits(X, y)
         
         # Define the split names and corresponding data
         splits_info = {
