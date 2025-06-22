@@ -104,9 +104,9 @@ class GridSearch:
             return MinMaxScaler()
         else:  # default to standard
             return StandardScaler()
-    
+        
     def _evaluate_params(self, params: Dict[str, Any], X_train: np.ndarray, y_train: np.ndarray, 
-                         X_val: np.ndarray, y_val: np.ndarray) -> Tuple[Dict[str, Any], Dict[str, float]]:
+                         X_val: np.ndarray, y_val: np.ndarray) -> Tuple[Dict[str, Any], Dict[str, float], Any]:
         """
         Evaluate a single set of parameters
         
@@ -143,9 +143,7 @@ class GridSearch:
             y_train_scaled = y_train
             X_val_scaled = X_val
             y_val_scaled = y_val
-            y_scaler = None
-
-        # Create and train model
+            y_scaler = None        # Create and train model
         model = self.trainer.create_model(X_train.shape[1])
 
         training_results = self.trainer.train_single_fold(
@@ -160,6 +158,9 @@ class GridSearch:
             y_scaler
         )
         
+        # Store the trained model for potential best model tracking
+        trained_model = training_results['model']
+        
         # Map metrics to expected keys for grid search
         metrics = {
             "val_mse": raw_metrics.get("mse", 0.0) if isinstance(raw_metrics, dict) else raw_metrics[0],
@@ -168,8 +169,7 @@ class GridSearch:
             "val_rmse": raw_metrics.get("rmse", 0.0) if isinstance(raw_metrics, dict) else raw_metrics[3],
             "val_mape": raw_metrics.get("mape", 0.0) if isinstance(raw_metrics, dict) else raw_metrics[4]
         }
-        
-        # Record execution time
+          # Record execution time
         execution_time = time.time() - start_time
         metrics["execution_time"] = float(execution_time)
         
@@ -182,8 +182,8 @@ class GridSearch:
                 self.logger.warning(f"Could not convert metric {key} to float: {value}")
                 float_metrics[key] = 0.0
         
-        # Return results
-        return params, float_metrics
+        # Return results including the trained model
+        return params, float_metrics, trained_model
     
     def search(self, X_train: np.ndarray, y_train: np.ndarray, 
                X_val: np.ndarray, y_val: np.ndarray,
@@ -223,13 +223,12 @@ class GridSearch:
         for combination in itertools.product(*values):
             # Create parameter dictionary
             params = {keys[i]: combination[i] for i in range(len(keys))}
-            
-            # Log progress
+              # Log progress
             self.logger.info(f"Evaluating combination {progress_bar.n+1}/{total_combinations} ({(progress_bar.n+1)/total_combinations*100:.1f}%)")
             
             try:
                 # Evaluate parameters
-                params, metrics = self._evaluate_params(params, X_train, y_train, X_val, y_val)
+                params, metrics, trained_model = self._evaluate_params(params, X_train, y_train, X_val, y_val)
                 
                 # Validate metrics
                 if not isinstance(metrics, dict):
@@ -258,11 +257,11 @@ class GridSearch:
                     self.logger.error(f"Invalid score: {score} for params: {params}")
                     progress_bar.update(1)
                     continue
-                
-                # Check if this is the best score
+                  # Check if this is the best score
                 if score < self.best_score:
                     self.best_score = score
                     self.best_params = copy.deepcopy(params)
+                    self.best_model = trained_model  # Store the best model
                     
                 # Store results
                 result = {**params, **metrics}
@@ -300,10 +299,10 @@ class GridSearch:
         # Apply best parameters to config
         if self.best_params:
             self._apply_params(self.best_params)
-        
-        # Return best parameters and additional information
+          # Return best parameters and additional information
         return {
             "best_params": self.best_params,
+            "best_model": self.best_model,
             "best_score": -self.best_score if optimization_metric == "val_r2" else self.best_score,
             "optimization_metric": optimization_metric,
             "results": results_df,

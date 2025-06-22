@@ -42,6 +42,10 @@ def save_split_datasets_raw(data_loader: DataLoader, output_base_dir: str = "dat
     # Split features and target
     X, y = data_loader.split_features_target(processed_data)
     
+    # Check if y is None before proceeding
+    if y is None:
+        raise ValueError("Target variable (y) is None. Cannot create data splits without target values.")
+    
     # Create train/val/test splits (this gives us raw preprocessed data)
     raw_splits = data_loader.create_data_splits(X, y)
     
@@ -199,6 +203,35 @@ class NeuralNetworkPipeline:
                 y_test_denorm, test_predictions, "Test"
             )
 
+            # Step 5: Save the best model
+            self.logger.info("Step 5: Saving best model...")
+            
+            # Prepare model metadata
+            model_metadata = {
+                "training_results": training_results,
+                "test_metrics": test_metrics,
+                "data_info": {
+                    "n_features": data_splits["X_train"].shape[1],
+                    "n_train": len(data_splits["X_train"]),
+                    "n_val": len(data_splits["X_val"]),
+                    "n_test": len(data_splits["X_test"]),
+                    "original_shape": data_splits.get("original_shape", "N/A"),
+                },
+                "embedding_info": embedding_info,
+                "timestamp": datetime.now().isoformat(),
+                "config": {
+                    "model_architecture": self.config.get("model.architecture", {}),
+                    "training_params": self.config.get("model.training", {}),
+                }
+            }
+            
+            # Save the model
+            model_path = self.trainer.save_model(
+                training_results["best_model"],
+                self.output_dir,
+                metadata=model_metadata
+            )
+
             # Create results summary
             results = {
                 "original_shape": data_splits.get("original_shape", "N/A"),
@@ -208,6 +241,7 @@ class NeuralNetworkPipeline:
                 "n_test": len(data_splits["X_test"]),
                 "training_results": training_results,
                 "test_metrics": test_metrics,
+                "model_path": model_path,
                 "output_directory": str(self.output_dir),
                 "execution_time": (datetime.now() - start_time).total_seconds(),
             }
@@ -243,6 +277,37 @@ class NeuralNetworkPipeline:
         self.grid_search.save_results(self.output_dir)
         self.grid_search.visualize_results(self.output_dir, self.visualizer)
 
+        # Save the best model from grid search
+        if grid_search_results.get("best_model") is not None:
+            self.logger.info("Saving best model from grid search...")
+            
+            # Prepare model metadata for grid search
+            model_metadata = {
+                "grid_search_results": {
+                    "best_params": grid_search_results["best_params"],
+                    "best_score": grid_search_results["best_score"],
+                    "optimization_metric": grid_search_results["optimization_metric"],
+                    "total_combinations": grid_search_results["total_combinations"],
+                    "completed_combinations": grid_search_results["completed_combinations"],
+                },
+                "data_info": {
+                    "original_shape": data_splits.get("original_shape", "N/A"),
+                },
+                "timestamp": datetime.now().isoformat(),
+                "model_type": "grid_search_best",
+            }
+            
+            # Save the best model
+            model_path = self.trainer.save_model(
+                grid_search_results["best_model"],
+                self.output_dir,
+                model_filename="best_grid_search_model.pth",
+                metadata=model_metadata
+            )
+        else:
+            self.logger.warning("No best model found in grid search results")
+            model_path = None
+
         # Create consolidated results
         results = {
             "original_shape": data_splits.get("original_shape", "N/A"),
@@ -250,6 +315,7 @@ class NeuralNetworkPipeline:
             "best_score": grid_search_results["best_score"],
             "total_combinations": grid_search_results["total_combinations"],
             "completed_combinations": grid_search_results["completed_combinations"],
+            "model_path": model_path,
             "output_directory": str(self.output_dir),
             "execution_time": (datetime.now() - start_time).total_seconds(),
         }
@@ -324,11 +390,15 @@ def main():
             print("\nGrid search completed successfully!")
             print(f"Results saved to: {results['output_directory']}")
             print(f"Best parameters: {results['best_params']}")
+            if results.get('model_path'):
+                print(f"Best model saved to: {results['model_path']}")
         else:
             logging.info("Running standard training mode")
             results = pipeline.run_complete_pipeline()
             print("\nPipeline completed successfully!")
             print(f"Results saved to: {results['output_directory']}")
+            if results.get('model_path'):
+                print(f"Best model saved to: {results['model_path']}")
 
     except Exception as e:
         logging.error(f"Pipeline failed: {str(e)}")

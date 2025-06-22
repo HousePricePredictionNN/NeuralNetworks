@@ -7,10 +7,11 @@ import torch.nn as nn
 import torch.optim as optim
 import numpy as np
 import logging
-from typing import Dict, Any, Tuple, List, Optional
+from typing import Dict, Any, Tuple, List, Optional, Union
 from sklearn.model_selection import KFold
 from sklearn.metrics import mean_absolute_error, mean_squared_error, r2_score
 import time
+from pathlib import Path
 
 
 class NeuralNetwork(nn.Module):
@@ -19,7 +20,7 @@ class NeuralNetwork(nn.Module):
     Now supports embedding layers for high-cardinality categorical features.
     """
 
-    def __init__(self, input_size: int, config_manager, embedding_info: dict = None):
+    def __init__(self, input_size: int, config_manager, embedding_info: Optional[Dict] = None):
         super(NeuralNetwork, self).__init__()
         self.config = config_manager
         self.input_size = input_size
@@ -48,12 +49,14 @@ class NeuralNetwork(nn.Module):
         self.embeddings = nn.ModuleDict()
         embedding_output_dim = self.config.get("model.architecture.embedding_dim", 8)
         total_embedding_dim = 0
-        for col, info in (self.embedding_info or {}).items():
-            num_embeddings = info["num_embeddings"]
-            # Use min(50, num_embeddings//2) as default embedding dim if not set
-            emb_dim = min(embedding_output_dim, max(2, num_embeddings // 2))
-            self.embeddings[col] = nn.Embedding(num_embeddings, emb_dim)
-            total_embedding_dim += emb_dim
+        
+        if self.embedding_info:
+            for col, info in self.embedding_info.items():
+                num_embeddings = info["num_embeddings"]
+                # Use min(50, num_embeddings//2) as default embedding dim if not set
+                emb_dim = min(embedding_output_dim, max(2, num_embeddings // 2))
+                self.embeddings[col] = nn.Embedding(num_embeddings, emb_dim)
+                total_embedding_dim += emb_dim
 
         # Build Sequential model
         layers = []
@@ -89,8 +92,11 @@ class NeuralNetwork(nn.Module):
                         module.weight, mode="fan_in", nonlinearity="relu"
                     )
                 nn.init.constant_(module.bias, 0)
+        
+        # Initialize embeddings if they exist
         for emb in self.embeddings.values():
-            nn.init.xavier_uniform_(emb.weight)
+            if hasattr(emb, 'weight') and isinstance(emb.weight, torch.Tensor):
+                nn.init.xavier_uniform_(emb.weight)
 
     def forward(self, x):
         """Forward pass through the network, with embedding support"""
@@ -129,7 +135,7 @@ class ModelTrainer:
         self.logger.info(f"Using device: {self.device}")
 
     def create_model(
-        self, input_size: int, embedding_info: dict = None
+        self, input_size: int, embedding_info: Optional[Dict] = None
     ) -> NeuralNetwork:
         """Create model instance with embedding info"""
         model = NeuralNetwork(input_size, self.config, embedding_info)
@@ -281,7 +287,7 @@ class ModelTrainer:
         }
 
     def cross_validate(
-        self, X: np.ndarray, y: np.ndarray, embedding_info: dict = None
+        self, X: np.ndarray, y: np.ndarray, embedding_info: Optional[Dict] = None
     ) -> Dict[str, Any]:
         """Perform cross-validation training with embedding info"""
         cv_enabled = self.config.get("model.cross_validation.enabled", True)
@@ -365,7 +371,7 @@ class ModelTrainer:
 
     def evaluate_model(
         self, model: nn.Module, X: np.ndarray, y: np.ndarray, scaler_y=None
-    ) -> Dict[str, float]:
+    ) -> Tuple[Dict[str, float], np.ndarray]:
         """Evaluate model performance"""
         model.eval()
 
@@ -411,3 +417,112 @@ class ModelTrainer:
             ).squeeze()
 
         return predictions
+
+    def save_model(
+        self, 
+        model: nn.Module, 
+        output_dir: Union[str, Path], 
+        model_filename: str = "best_model.pth",
+        metadata: Optional[Dict[str, Any]] = None
+    ) -> str:
+        """
+        Save the trained model along with metadata.
+        
+        Args:
+            model: The trained PyTorch model
+            output_dir: Directory where to save the model
+            model_filename: Name of the model file
+            metadata: Additional metadata to save with the model
+            
+        Returns:
+            Path to the saved model file
+        """
+        output_dir = Path(output_dir)
+        output_dir.mkdir(parents=True, exist_ok=True)
+        
+        model_path = output_dir / model_filename
+        
+        # Save model state dict with basic config
+        torch.save({
+            'model_state_dict': model.state_dict(),
+            'model_config': {
+                'input_size': getattr(model, 'input_size', None),
+                'embedding_info': getattr(model, 'embedding_info', None)
+            },
+            'metadata': metadata
+        }, model_path)
+        
+        self.logger.info(f"Model saved to: {model_path}")
+        return str(model_path)
+
+    def load_model(
+        self, 
+        model_path: Union[str, Path]
+    ) -> Tuple[nn.Module, Optional[Dict[str, Any]]]:
+        """
+        Load a saved model and its metadata.
+        
+        Args:
+            model_path: Path to the saved model file
+            
+        Returns:
+            Tuple of (loaded model, metadata dict)
+        """
+        model_path = Path(model_path)
+        
+        if not model_path.exists():
+            raise FileNotFoundError(f"Model file not found: {model_path}")
+            
+        # Load model checkpoint
+        checkpoint = torch.load(model_path, map_location=self.device)
+        
+        # Get model config
+        model_config = checkpoint.get('model_config', {})
+        input_size = model_config.get('input_size')
+        embedding_info = model_config.get('embedding_info')
+        
+        if input_size is None:
+            raise ValueError("Model input_size not found in saved model")
+        
+        # Recreate model
+        model = self.create_model(
+            input_size=input_size, 
+            embedding_info=embedding_info
+        )
+        
+        # Load state dict
+        model.load_state_dict(checkpoint['model_state_dict'])
+        model.eval()
+        
+        # Get metadata
+        metadata = checkpoint.get('metadata')
+                
+        self.logger.info(f"Model loaded from: {model_path}")
+        return model, metadata
+
+    def load_and_predict(
+        self, 
+        model_path: Union[str, Path], 
+        X_new: np.ndarray,
+        scaler_y=None
+    ) -> Tuple[np.ndarray, Optional[Dict[str, Any]]]:
+        """
+        Load a saved model and make predictions on new data.
+        
+        Args:
+            model_path: Path to the saved model file
+            X_new: New data to make predictions on
+            scaler_y: Target scaler for denormalization (optional)
+            
+        Returns:
+            Tuple of (predictions, metadata dict)
+        """
+        # Load the model
+        model, metadata = self.load_model(model_path)
+        
+        # Make predictions
+        predictions = self.predict(model, X_new, scaler_y)
+        
+        self.logger.info(f"Made predictions for {len(X_new)} samples using loaded model")
+        
+        return predictions, metadata
