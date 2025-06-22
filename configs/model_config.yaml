@@ -1,132 +1,132 @@
 # Enhanced Neural Network Configuration
 project:
-  name: "house_price_prediction"
-  description: "Neural network for house price prediction with enhanced modularity"
-  version: "2.0"
+    name: "house_price_prediction"
+    description: "Neural network for house price prediction with enhanced modularity"
+    version: "2.0"
 
 # Pipeline configuration
 pipeline:
-  mode: "train" # Options: "train", "grid_search", or "save_datasets"
+    mode: "train" # Options: "train", "grid_search", or "save_datasets"
 
 # Data Configuration
 data:
-  csv_path: "data/input/data_lodz.csv"
-  encoding: "utf-8"
-  separator: null # auto-detect
-  # Data loading strategy
-  loading:
-    total_rows: 58850
-    train_ratio: 0.75 # 70% for trainings
-    val_ratio: 0.2 # 15% for validation
-    test_ratio: 0.05 # 15% for final testing (verification)
-    shuffle_data: true
-    random_state: 42
+    csv_path: "data/input/data_lodz_unified3.csv"
+    encoding: "utf-8"
+    separator: null # auto-detect
+    # Data loading strategy
+    loading:
+        total_rows: 58850
+        train_ratio: 0.75 # 70% for trainings
+        val_ratio: 0.2 # 15% for validation
+        test_ratio: 0.05 # 15% for final testing (verification)
+        shuffle_data: true
+        random_state: 42
 
-    # Data splitting strategy
-    split_by_year: false # If true, splits data by listing_year instead of randomly
-    year_splits:
-      test_years: [2024, 2025] # Test set years
-      val_years: [2021, 2022, 2023] # Validation set years
-      # Train set will be all remaining years (< 2021)
+        # Data splitting strategy
+        split_by_year: false # If true, splits data by listing_year instead of randomly
+        year_splits:
+            test_years: [2024, 2025] # Test set years
+            val_years: [2021, 2022, 2023] # Validation set years
+            # Train set will be all remaining years (< 2021)
 
-  # Missing data handling
-  missing_data:
-    strategy: "median" # mean, median, mode, drop
-    threshold: 0.7 # drop columns with >70% missing values
+    # Missing data handling
+    missing_data:
+        strategy: "median" # mean, median, mode, drop
+        threshold: 0.7 # drop columns with >70% missing values
 
-  # Feature engineering
-  preprocessing:
-    normalize_features: true
-    scaler_type: "standard" # standard, robust, minmax
-    handle_outliers: true # Only removes extreme price outliers
+    # Feature engineering
+    preprocessing:
+        normalize_features: true
+        scaler_type: "standard" # standard, robust, minmax
+        handle_outliers: true # Only removes extreme price outliers
 
-  # Categorical encoding configuration
-  categorical:
-    # Columns to one-hot encode (low cardinality)
-    onehot_columns:
-      - "city"
-      - "property_type"
-      - "ownership_type"
-      - "rooms" # Number of rooms one-hot encoded
+    # Categorical encoding configuration
+    categorical:
+        # Columns to one-hot encode (low cardinality)
+        onehot_columns:
+            - "city"
+            - "property_type"
+            - "ownership_type"
+            - "rooms" # Number of rooms one-hot encoded
 
-  # Columns to drop (data leakage prevention and high missing data)
-  columns_to_drop:
-    - "adress"
-    - "voivodeship"
-    # Data leakage columns
-    - "price_per_sqm"
-    - "primary_price"
-    - "secondary_price"
-    # High missing data columns
-    - "latitude"
-    - "longitude"
-    - "poi_count"
-    - "has_storage"
+    # Columns to drop (data leakage prevention and high missing data)
+    columns_to_drop:
+        - "adress"
+        - "voivodeship"
+        # Data leakage columns
+        - "price_per_sqm"
+        - "primary_price"
+        - "secondary_price"
+        # High missing data columns
+        - "latitude"
+        - "longitude"
+        - "poi_count"
+        - "has_storage"
 
 # Model Configuration
 model:
-  # Neural Network Architecture
-  architecture:
-    hidden_layers: [512, 256]
-    dropout_rate: 0.05
-    activation: "leaky_relu"
-    output_activation: "linear"
+    # Neural Network Architecture
+    architecture:
+        hidden_layers: [512, 256]
+        dropout_rate: 0.05
+        activation: "leaky_relu"
+        output_activation: "linear"
 
-  # Training parameters
-  training:
-    epochs: 1000
-    batch_size: 32
-    learning_rate: 0.001
-    early_stopping:
-      enabled: true
-      patience: 75
-      min_delta: 0.001
-      restore_best_weights: true
+    # Training parameters
+    training:
+        epochs: 1000
+        batch_size: 32
+        learning_rate: 0.001
+        early_stopping:
+            enabled: true
+            patience: 75
+            min_delta: 0.001
+            restore_best_weights: true
 
-  # Loss and Optimization
-  optimization:
-    loss_function: "mse"
-    optimizer: "adam"
-    optimizer_params:
-      weight_decay: 0.0001
-    metrics: ["mae", "mse", "r2"]
+    # Loss and Optimization
+    optimization:
+        loss_function: "mse"
+        optimizer: "adam"
+        optimizer_params:
+            weight_decay: 0.0001
+        metrics: ["mae", "mse", "r2"]
 
-  grid_search:
-    optimization_metric: "val_mse" # Options: val_mse, val_mae, val_r2
-    param_grid:
-      hidden_layers: [[256, 128], [512, 256]]
-      dropout_rate: [0.05, 0.1]
-      learning_rate: [0.0005, 0.001]
-      batch_size: [32, 64]
-      activation: ["relu", "leaky_relu"]
-      scaler_type: ["standard"]
-      weight_decay: [0.0001, 0.0005]
-      # Cross validation
-      cross_validation:
-        enabled: true
-        folds: 5
-        scoring: "neg_mean_absolute_error"
+    grid_search:
+        optimization_metric: "val_mse" # Options: val_mse, val_mae, val_r2
+        param_grid:
+            hidden_layers: [[256, 128], [512, 256]]
+            dropout_rate: [0.05, 0.1]
+            learning_rate: [0.0005, 0.001]
+            batch_size: [32, 64]
+            activation: ["relu", "leaky_relu"]
+            scaler_type: ["standard"]
+            weight_decay: [0.0001, 0.0005]
+            # Cross validation
+            cross_validation:
+                enabled: true
+                folds: 5
+                scoring: "neg_mean_absolute_error"
 
 # Output Configuration
 output:
-  results_dir: "data/output"
-  save_model: true
-  save_predictions: true
-  save_plots: true
-  save_config: true
+    results_dir: "data/output"
+    save_model: true
+    save_predictions: true
+    save_plots: true
+    save_config: true
 
-  # Plotting options
-  plots:
-    loss_curve: true
-    predictions_vs_actual: true
-    residuals_plot: true
-    feature_importance: true
-    model_architecture: true
-    missing_data: true
-    grid_search_results: true
+    # Plotting options
+    plots:
+        loss_curve: true
+        predictions_vs_actual: true
+        residuals_plot: true
+        feature_importance: true
+        model_architecture: true
+        missing_data: true
+        grid_search_results: true
 
 # Logging Configuration
 logging:
-  level: "INFO" # DEBUG, INFO, WARNING, ERROR
-  save_to_file: true
-  console_output: true
+    level: "INFO" # DEBUG, INFO, WARNING, ERROR
+    save_to_file: true
+    console_output: true
