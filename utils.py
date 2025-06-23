@@ -12,19 +12,34 @@ def create_output_directory():
 
     return dir_path    
 
-def drop_columns_from_config(data, config):
-    """Drop columns specified in config"""
-    columns_to_drop = config.get('data.columns_to_drop', []) if config else []
-    existing_cols_to_drop = [col for col in columns_to_drop if col in data.columns]
-    
-    if existing_cols_to_drop:
-        data = data.drop(columns=existing_cols_to_drop)
-        print(f"Dropped {len(existing_cols_to_drop)} columns from config:")
-        for col in existing_cols_to_drop[:5]:  # Show first 5
+# def drop_columns_from_config(data, config):
+#     """Drop columns specified in config"""
+#     columns_to_drop = config.get('data.columns_to_drop', []) if config else []
+#     existing_cols_to_drop = [col for col in columns_to_drop if col in data.columns]
+#
+#     if existing_cols_to_drop:
+#         data = data.drop(columns=existing_cols_to_drop)
+#         print(f"Dropped {len(existing_cols_to_drop)} columns from config:")
+#         for col in existing_cols_to_drop[:5]:  # Show first 5
+#             print(f"  - {col}")
+#         if len(existing_cols_to_drop) > 5:
+#             print(f"  ... and {len(existing_cols_to_drop) - 5} more")
+#
+#     return data
+
+def select_columns_from_config(data, config):
+    """Select columns specified in config"""
+    columns_to_add = config.get('data.columns_to_add', []) if config else []
+    existing_cols_to_add = [col for col in columns_to_add if col in data.columns]
+
+    if existing_cols_to_add:
+        data = data[existing_cols_to_add]
+        print(f"Selected {len(existing_cols_to_add)} columns from config:")
+        for col in existing_cols_to_add[:5]:  # Show first 5
             print(f"  - {col}")
-        if len(existing_cols_to_drop) > 5:
-            print(f"  ... and {len(existing_cols_to_drop) - 5} more")
-    
+        if len(existing_cols_to_add) > 5:
+            print(f"  ... and {len(existing_cols_to_add) - 5} more")
+
     return data
 
 def convert_comma_decimals(data):
@@ -98,7 +113,7 @@ def preprocess_data(data, config=None):
     print(f"Original data shape: {data.shape}")
     
     # Step 1: Drop columns specified in config
-    data = drop_columns_from_config(data, config)
+    data = select_columns_from_config(data, config)
     
     # Step 2: Convert comma decimals to proper format
     data = convert_comma_decimals(data)

@@ -57,6 +57,44 @@ data:
     - "poi_count"
     - "has_storage"
 
+  columns_to_add:
+    - "area_sqm"
+    - "rooms"
+    - "floor"
+    - "floor_count"
+    - "build_year"
+    - "distance_to_center"
+    - "distance_to_school"
+    - "distance_to_healthcare"
+    - "distance_to_post_office"
+    - "distance_to_kindergarten"
+    - "distance_to_restaurant"
+    - "distance_to_college"
+    - "distance_to_pharmacy"
+    - "has_parking"
+    - "has_balcony"
+    - "has_elevator"
+    - "has_security"
+    - "price"
+    - "listing_year"
+    - "listing_month"
+    - "inflation"
+    - "housing_inflation"
+    - "avg_salary"
+    - "population"
+    - "unemployment"
+    - "interest_rate"
+    - "city"
+    - "property_type"
+    - "ownership_type"
+
+mode: "prediction"
+lstm_hidden_size: 64
+lstm_num_layers: 2
+sequence_length: 4
+last_known_year: 2024  # ostatni rok w danych historycznych
+num_years_to_predict: 5  # liczba lat do przewidzenia w przyszłość
+
 # Model Configuration
 model:
   # Neural Network Architecture
@@ -124,3 +162,18 @@ logging:
   level: "INFO" # DEBUG, INFO, WARNING, ERROR
   save_to_file: true
   console_output: true
+
+prediction:
+  last_known_year: 2024  # ostatni rok w danych historycznych
+  num_years_to_predict: 5  # liczba lat do przewidzenia w przyszłość
+  output_dir: "data/output/predictions"
+  save_format:
+    - "csv"
+    - "png"
+  visualization:
+    show_confidence_interval: true
+    plot_historical_data: true
+    plot_style: "seaborn"
+    figure_size: [12, 8]
+    dpi: 300
+

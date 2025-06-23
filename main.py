@@ -2,13 +2,14 @@
 Main orchestration module for the enhanced neural network project
 """
 
+
 import logging
 import os
 import pandas as pd
 from datetime import datetime
 from typing import Dict, Any
 import numpy as np
-
+import torch
 # Import custom modules
 from src.config.config_manager import ConfigManager
 from src.data.data_loader import DataLoader
@@ -119,6 +120,7 @@ class NeuralNetworkPipeline:
     Main pipeline for house price prediction using neural networks
     """
 
+
     def __init__(self, config_path: str = "configs/model_config.yaml"):
         # Initialize components
         self.config = ConfigManager(config_path)
@@ -220,6 +222,66 @@ class NeuralNetworkPipeline:
             self.logger.error(f"Pipeline failed: {str(e)}")
             raise
 
+    def run_prediction_pipeline(self):
+        """
+        Uruchamia pipeline predykcyjny wykorzystując LSTM
+        """
+        if not os.path.exists(self.output_dir):
+            os.makedirs(self.output_dir)
+            self.logger.info(f"Utworzono katalog output: {self.output_dir}")
+
+        self.logger.info(f"Używany katalog output: {self.output_dir}")
+
+        self.logger.info("Rozpoczynanie pipeline'u predykcyjnego z LSTM")
+
+        # Przygotowanie danych sekwencyjnych
+        sequences, targets = self.data_loader.prepare_sequence_data()
+
+        # Podział na zbiór treningowy i walidacyjny
+        split_idx = int(len(sequences) * 0.8)
+        train_sequences = sequences[:split_idx]
+        train_targets = targets[:split_idx]
+        val_sequences = sequences[split_idx:]
+        val_targets = targets[split_idx:]
+
+        # Trenowanie modelu
+        model = self.trainer.train_lstm(train_sequences, train_targets,
+                                        val_sequences, val_targets)
+
+        # Wizualizacja wyników
+        predictions = model(torch.FloatTensor(val_sequences).to(self.trainer.device))
+        predictions = predictions.cpu().detach().numpy()
+
+        self.visualizer.plot_predictions_vs_actual(
+            predictions.squeeze(),
+            val_targets,
+            title="Predykcje LSTM vs Rzeczywiste Ceny"
+        )
+
+        # Dodane: Generowanie predykcji na przyszłe lata
+        last_sequence = sequences[-1]
+        last_known_year = self.config.get('last_known_year', 2024)
+        num_years_to_predict = self.config.get('num_years_to_predict', 5)
+
+        # Generuj predykcje na przyszłe lata
+        future_predictions = self.trainer.predict_future_prices(
+            model,
+            last_sequence,
+            num_years_to_predict
+        )
+
+        # Przygotuj historyczne dane do wizualizacji
+        historical_prices = targets[-num_years_to_predict:]
+
+        # Wywołaj funkcję wizualizacji przyszłych predykcji
+        self.visualizer.plot_future_predictions(
+            historical_data=historical_prices,
+            future_predictions=future_predictions,
+            last_year=last_known_year
+        )
+
+        self.logger.info("Pipeline predykcyjny zakończony")
+
     def run_grid_search(self) -> Dict[str, Any]:
         self.logger.info("Starting grid search for optimal hyperparameters...")
         start_time = datetime.now()
@@ -302,12 +364,12 @@ def main():
         handlers=[logging.StreamHandler()],
     )
 
-    try: 
+    try:
         # Initialize pipeline
         pipeline = NeuralNetworkPipeline(config_path=config_path)
 
         # Get pipeline mode from config
-        pipeline_mode = pipeline.config.get("pipeline.mode", "train")      
+        pipeline_mode = pipeline.config.get("pipeline.mode", "train")
         if pipeline_mode == "save_datasets":
             logging.info("Running dataset preparation and saving mode")
             results = pipeline.prepare_and_save_datasets_only()
@@ -324,6 +386,14 @@ def main():
             print("\nGrid search completed successfully!")
             print(f"Results saved to: {results['output_directory']}")
             print(f"Best parameters: {results['best_params']}")
+        elif pipeline_mode == "prediction":
+            logging.info("Uruchamianie trybu predykcji")
+            pipeline.run_prediction_pipeline()
+            print("\nPipeline predykcyjny zakończony pomyślnie!")
+            print(f"Wyniki zostały zapisane w katalogu: {pipeline.output_dir}")
+            print("Wygenerowane pliki:")
+            print("  - future_predictions.png (wykres predykcji)")
+            print("  - future_predictions.csv (dane predykcji)")
         else:
             logging.info("Running standard training mode")
             results = pipeline.run_complete_pipeline()

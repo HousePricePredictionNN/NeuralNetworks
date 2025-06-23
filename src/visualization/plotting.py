@@ -10,7 +10,7 @@ import logging
 from pathlib import Path
 from typing import List, Optional
 from sklearn.metrics import mean_absolute_error, mean_squared_error, r2_score
-
+import os
 # Set style for better plots
 plt.style.use('default')
 
@@ -62,6 +62,70 @@ class ResultsVisualizer:
         
         self.logger.info(f"Missing data visualization saved to {missing_data_path}")
         return str(missing_data_path)
+
+    def plot_future_predictions(self, historical_data, future_predictions, last_year):
+        """
+        Wizualizuje historyczne ceny i predykcje na przyszłe lata
+
+        Args:
+            historical_data: DataFrame z historycznymi danymi
+            future_predictions: Lista przewidywanych cen
+            last_year: Ostatni rok w danych historycznych
+        """
+
+        save_path = os.path.join(self.output_dir, 'future_predictions.png')
+        csv_path = os.path.join(self.output_dir, 'future_predictions.csv')
+
+        self.logger.info(f"Próba zapisania wykresu do: {save_path}")
+        self.logger.info(f"Próba zapisania CSV do: {csv_path}")
+
+        plt.figure(figsize=(12, 6))
+
+        # Przygotuj dane do wykresu
+        historical_years = range(last_year - len(historical_data) + 1, last_year + 1)
+        future_years = range(last_year + 1, last_year + len(future_predictions) + 1)
+
+        # Wykres danych historycznych
+        plt.plot(historical_years, historical_data, 'b-o', label='Dane historyczne')
+
+        # Wykres predykcji
+        plt.plot(future_years, future_predictions, 'r--o', label='Predykcje')
+
+        # Dodaj etykiety dla wszystkich punktów
+        for year, price in zip(historical_years, historical_data):
+            plt.annotate(f'{price:.2f}', (year, price), textcoords="offset points",
+                         xytext=(0, 10), ha='center')
+
+        for year, price in zip(future_years, future_predictions):
+            plt.annotate(f'{price:.2f}', (year, price), textcoords="offset points",
+                         xytext=(0, 10), ha='center', color='red')
+
+        plt.title('Historyczne ceny i predykcje na przyszłe lata')
+        plt.xlabel('Rok')
+        plt.ylabel('Cena')
+        plt.grid(True)
+        plt.legend()
+
+        # Zapisz wykres
+        save_path = os.path.join(self.output_dir, 'future_predictions.png')
+        plt.savefig(save_path)
+        plt.close()
+
+        # Zapisz dane do CSV
+        results = {
+            'Rok': list(historical_years) + list(future_years),
+            'Cena': list(historical_data) + list(future_predictions),
+            'Typ': ['Historyczna'] * len(historical_data) + ['Predykcja'] * len(future_predictions)
+        }
+        df = pd.DataFrame(results)
+        csv_path = os.path.join(self.output_dir, 'future_predictions.csv')
+        df.to_csv(csv_path, index=False)
+
+        self.logger.info(f'Zapisano wykres predykcji do: {save_path}')
+        self.logger.info(f'Zapisano szczegółowe wyniki do: {csv_path}')
+        self.logger.info('\nPredykcje na kolejne lata:')
+        for year, price in zip(future_years, future_predictions):
+            self.logger.info(f'Rok {year}: {price:.2f}')
     
     def plot_training_curves(self, train_losses: List[List[float]], 
                            val_losses: List[List[float]], 
@@ -260,9 +324,14 @@ class ResultsVisualizer:
             training = results.get('training_results', {})
             f.write("TRAINING RESULTS:\n")
             f.write(f"  Cross-Validation: {getattr(self.config, 'get', lambda x, default: default)('model.cross_validation.enabled', False)}\n")
-            
+
             if training.get('cv_scores') and len(training['cv_scores']) > 1:
-                f.write(f"  CV Score: {training.get('mean_score', 'N/A'):.6f} (+/- {training.get('std_score', 'N/A'):.6f})\n")
+                mean_score = training.get('mean_score', 'N/A')
+                std_score = training.get('std_score', 'N/A')
+                if mean_score != 'N/A' and std_score != 'N/A':
+                    f.write(f"  CV Score: {mean_score:.6f} (+/- {std_score:.6f})\n")
+                else:
+                    f.write(f"  CV Score: {mean_score} (+/- {std_score})\n")
             
             best_val_loss = training.get('best_val_loss', 'N/A')
             if isinstance(best_val_loss, (int, float)):

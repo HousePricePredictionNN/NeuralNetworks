@@ -11,6 +11,7 @@ from sklearn.model_selection import train_test_split
 from sklearn.preprocessing import StandardScaler, RobustScaler, MinMaxScaler
 from sklearn.impute import SimpleImputer
 import warnings
+from tqdm import tqdm
 
 warnings.filterwarnings("ignore")
 
@@ -39,14 +40,23 @@ class DataLoader:
         self.logger.info(f"Max rows to load: {total_rows}")
 
         try:
-            # Load data with parameters
-            data = pd.read_csv(
-                data_path,
-                sep=separator,
-                engine="python",
-                nrows=total_rows,
-                encoding=encoding,
-            )
+            # Użyj chunksize dla pokazania postępu
+            chunks = []
+            chunk_size = 1000  # możesz dostosować rozmiar chunka
+
+            with tqdm(total=total_rows, desc="Loading data") as pbar:
+                for chunk in pd.read_csv(
+                        data_path,
+                        sep=separator,
+                        engine="python",
+                        nrows=total_rows,
+                        encoding=encoding,
+                        chunksize=chunk_size
+                ):
+                    chunks.append(chunk)
+                    pbar.update(len(chunk))
+
+            data = pd.concat(chunks, ignore_index=True)
 
             self.logger.info(f"Data loaded successfully: {data.shape}")
             self.logger.info(f"Columns: {list(data.columns)}")
@@ -91,9 +101,7 @@ class DataLoader:
 
         return data, embedding_info
 
-    def preprocess_data(
-        self, data: pd.DataFrame
-    ) -> Tuple[pd.DataFrame, Dict[str, Any]]:
+    def preprocess_data(self, data: pd.DataFrame) -> Tuple[pd.DataFrame, Dict[str, Any]]:
         """
         Apply comprehensive preprocessing pipeline,
         including categorical encoding.
@@ -101,40 +109,54 @@ class DataLoader:
         self.logger.info("Starting data preprocessing...")
         original_shape = data.shape
 
-        # Step 1: Drop configured columns
-        data = self._drop_configured_columns(data)
+        # Lista kroków preprocessingu
+        preprocessing_steps = [
+            ("Selecting configured columns", self._select_configured_columns),
+            ("Converting data types", self._convert_data_types),
+            ("Handling missing values", self._handle_missing_values),
+            ("Handling outliers",
+             lambda x: self._handle_outliers(x) if self.config.get("data.preprocessing.handle_outliers", False) else x),
+            ("Encoding categorical columns", lambda x: self._encode_categorical_columns(x)[0]),
+            # bierzemy tylko pierwszy element z tuple
+            ("Ensuring numeric data", self._ensure_numeric_data)
+        ]
 
-        # Step 2: Handle data types
-        data = self._convert_data_types(data)
+        # Utworzenie paska postępu
+        with tqdm(total=len(preprocessing_steps), desc="Preprocessing data") as pbar:
+            for step_name, step_func in preprocessing_steps:
+                pbar.set_description(f"Preprocessing: {step_name}")
+                data = step_func(data)
+                pbar.update(1)
 
-        # Step 3: Handle missing values
-        data = self._handle_missing_values(data)
+        # Get embedding info separately since we modified the encoding step above
+        _, embedding_info = self._encode_categorical_columns(data)
 
-        # Step 4: Handle outliers
-        if self.config.get("data.preprocessing.handle_outliers", False):
-            data = self._handle_outliers(data)
-
-        # Step 5: Encode categoricals (before removing non-numeric)
-        data, embedding_info = self._encode_categorical_columns(
-            data
-        )  # Step 6: Remove remaining non-numeric columns
-        data = self._ensure_numeric_data(data)
-
-        # Step 7: Log final columns used for training
+        # Log final columns used for training
         self._log_training_columns(data)
 
         self.logger.info("Preprocessing complete: %s -> %s", original_shape, data.shape)
         return data, embedding_info
 
-    def _drop_configured_columns(self, data: pd.DataFrame) -> pd.DataFrame:
-        """Drop columns specified in configuration"""
-        columns_to_drop = self.config.get("data.columns_to_drop", [])
-        existing_cols_to_drop = [col for col in columns_to_drop if col in data.columns]
-        if existing_cols_to_drop:
-            self.logger.info(
-                "Dropped %d columns from config", len(existing_cols_to_drop)
-            )
-            data = data.drop(columns=existing_cols_to_drop)
+    # def _drop_configured_columns(self, data: pd.DataFrame) -> pd.DataFrame:
+    #     """Drop columns specified in configuration"""
+    #     columns_to_drop = self.config.get("data.columns_to_drop", [])
+    #     existing_cols_to_drop = [col for col in columns_to_drop if col in data.columns]
+    #     if existing_cols_to_drop:
+    #         self.logger.info(
+    #             "Dropped %d columns from config", len(existing_cols_to_drop)
+    #         )
+    #         data = data.drop(columns=existing_cols_to_drop)
+    #     return data
+
+    def _select_configured_columns(self, data: pd.DataFrame) -> pd.DataFrame:
+        """Select columns specified in configuration"""
+        columns_to_add = self.config.get('data.columns_to_add', [])
+        existing_cols_to_add = [col for col in columns_to_add if col in data.columns]
+
+        if existing_cols_to_add:
+            data = data[existing_cols_to_add]
+            self.logger.info(f"Selected {len(existing_cols_to_add)} columns from config")
+
         return data
 
     def _convert_data_types(self, data: pd.DataFrame) -> pd.DataFrame:
@@ -444,6 +466,29 @@ class DataLoader:
 
         self.logger.info("Data pipeline completed successfully")
         return normalized_splits
+
+    def prepare_sequence_data(self, sequence_length=4):
+        """
+        Przygotowuje dane w format sekwencyjny dla LSTM.
+        sequence_length: liczba poprzednich lat użytych do predykcji
+        """
+        data = self.load_data()
+        # Sortujemy dane po dacie
+        data = data.sort_values('rok')
+
+        sequences = []
+        targets = []
+
+        for location in data['lokalizacja'].unique():
+            location_data = data[data['lokalizacja'] == location]
+            if len(location_data) >= sequence_length + 1:
+                for i in range(len(location_data) - sequence_length):
+                    sequence = location_data.iloc[i:i + sequence_length]
+                    target = location_data.iloc[i + sequence_length]['cena']
+                    sequences.append(sequence.drop(['cena'], axis=1).values)
+                    targets.append(target)
+
+        return np.array(sequences), np.array(targets)
 
     def save_split_datasets_raw(self, output_base_dir: str = "data/splits") -> Dict[str, Any]:
         """
