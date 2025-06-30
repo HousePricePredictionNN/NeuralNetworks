@@ -9,6 +9,11 @@ from datetime import datetime
 from typing import Dict, Any
 import numpy as np
 
+# Dodaj ten import na górze pliku main.py
+from src.models.lstm_predictor import PricePredictor
+from pathlib import Path
+
+
 # Import custom modules
 from src.config.config_manager import ConfigManager
 from src.data.data_loader import DataLoader
@@ -288,6 +293,66 @@ class NeuralNetworkPipeline:
             self.logger.error(f"Dataset preparation failed: {str(e)}")
             raise
 
+    # W klasie NeuralNetworkPipeline dodaj tę metodę:
+    def run_prediction_pipeline(self):
+        """Run prediction pipeline using LSTM"""
+
+        data_path = self.config.get_data_path()
+        print(f"🔍 Ścieżka do danych: {data_path}")
+        print(f"🔍 Czy plik istnieje: {data_path.exists()}")
+        if data_path.exists():
+            # Sprawdź rzeczywisty rozmiar pliku
+            total_lines = sum(1 for line in open(data_path, 'r', encoding='utf-8'))
+            print(f"🔍 Rzeczywista liczba linii w pliku: {total_lines}")
+
+        self.logger.info("Starting prediction pipeline...")
+        
+        # Load and prepare data
+        self.logger.info("Loading data for time series preparation...")
+        df = self.data_loader.load_data()
+        
+        # Initialize predictor
+        predictor = PricePredictor(self.config.to_dict())
+        
+        # Check if we need to train a new model or load existing one
+        model_path = self.config.get('prediction.model_path')
+        if model_path and Path(model_path).exists():
+            self.logger.info(f"Loading existing LSTM model from {model_path}")
+            predictor.load_model(model_path)
+        else:
+            self.logger.info("Training new LSTM model...")
+            # Prepare time series data
+            X, y, feature_names = predictor.prepare_time_series_data(df)
+            
+            # Train model
+            predictor.train_lstm_model(X, y)
+            
+            # Save model
+            model_save_path = self.output_dir / "lstm_model.pth"
+            predictor.save_model(str(model_save_path))
+        
+        # Make prediction for example property
+        example_property = self.config.get('prediction.example_property', {})
+        if example_property:
+            self.logger.info("Making prediction for example property...")
+            prediction_result = predictor.predict_future_price(example_property)
+            
+            # Log results
+            self.logger.info(f"Prediction Results:")
+            self.logger.info(f"Target Year: {prediction_result['target_year']}")
+            self.logger.info(f"Predicted Price: {prediction_result['predicted_price']:,.0f} PLN")
+            self.logger.info(f"Confidence Interval: {prediction_result['confidence_lower']:,.0f} - {prediction_result['confidence_upper']:,.0f} PLN")
+            
+            # Save results
+            results_file = self.output_dir / "prediction_results.json"
+            import json
+            with open(results_file, 'w') as f:
+                json.dump(prediction_result, f, indent=2)
+            
+            self.logger.info(f"Prediction results saved to {results_file}")
+        
+        self.logger.info("Prediction pipeline completed successfully!")
+
 
 def main():
     """Main function to run the neural network pipeline"""
@@ -324,6 +389,13 @@ def main():
             print("\nGrid search completed successfully!")
             print(f"Results saved to: {results['output_directory']}")
             print(f"Best parameters: {results['best_params']}")
+        # W metodzie run_complete_pipeline dodaj obsługę nowego trybu:
+        # (znajdź istniejący kod i dodaj elif)
+        elif pipeline_mode == "prediction":
+            logging.info("Running prediction mode")
+            pipeline.run_prediction_pipeline()
+            print("\nPrediction pipeline completed successfully!")
+            print(f"Results saved to: {pipeline.output_dir}")
         else:
             logging.info("Running standard training mode")
             results = pipeline.run_complete_pipeline()

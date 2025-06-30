@@ -53,19 +53,31 @@ class ConfigManager:
             'model.architecture.hidden_layers'
         ]
         
+        # Add prediction mode specific validation
+        mode = self.get('pipeline.mode', 'train')
+        if mode == 'prediction':
+            prediction_required = [
+                'prediction.model_path',
+                'prediction.target_year',
+                'prediction.sequence_length'
+            ]
+            required_paths.extend(prediction_required)
+        
         for path in required_paths:
             if self.get(path) is None:
                 self.logger.warning(f"Missing required config parameter: {path}")
         
-        # Validate ratios sum to 1
-        ratios = [
-            self.get('data.loading.train_ratio', 0.7),
-            self.get('data.loading.val_ratio', 0.15),
-            self.get('data.loading.test_ratio', 0.15)
-        ]
-        if abs(sum(ratios) - 1.0) > 0.001:
-            raise ValueError(f"Data split ratios must sum to 1.0, got {sum(ratios)}")
-              # Set defaults for missing data plot configuration if not present
+        # Validate ratios sum to 1 (only for train/grid_search modes)
+        if mode in ['train', 'grid_search']:
+            ratios = [
+                self.get('data.loading.train_ratio', 0.7),
+                self.get('data.loading.val_ratio', 0.15),
+                self.get('data.loading.test_ratio', 0.15)
+            ]
+            if abs(sum(ratios) - 1.0) > 0.001:
+                raise ValueError(f"Data split ratios must sum to 1.0, got {sum(ratios)}")
+        
+        # Set defaults for missing data plot configuration if not present
         if self.get('output.plots.missing_data') is None:
             self.set('output.plots.missing_data', True)
     

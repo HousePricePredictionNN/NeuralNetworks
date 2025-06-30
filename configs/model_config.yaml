@@ -6,7 +6,7 @@ project:
 
 # Pipeline configuration
 pipeline:
-  mode: "train" # Options: "train", "grid_search", or "save_datasets"
+  mode: "prediction" # Options: "train", "grid_search", "save_datasets", "prediction"
 
 # Data Configuration
 data:
@@ -16,7 +16,7 @@ data:
 
   # Data loading strategy
   loading:
-    total_rows: 58850
+    total_rows: 1500
     train_ratio: 0.75 # 70% for training
     val_ratio: 0.2 # 15% for validation
     test_ratio: 0.05 # 15% for final testing (verification)
@@ -101,6 +101,40 @@ model:
         folds: 5
         scoring: "neg_mean_absolute_error"
 
+# Prediction Configuration (LSTM)
+prediction:
+  # Model path for loading pre-trained model
+  model_path: "data/output/lstm_model.pth"
+  
+  # Target year for prediction
+  target_year: 2026
+  
+  # Time series parameters
+  sequence_length: 12  # Number of time steps to look back
+  
+  # LSTM Architecture
+  lstm:
+    hidden_size: 64
+    num_layers: 1
+    dropout: 0.3
+  
+  # Training parameters for LSTM
+  training:
+    epochs: 200
+    batch_size: 32
+    learning_rate: 0.001
+    patience: 20
+    
+  # Example property for prediction
+  example_property:
+    area_sqm: 95
+    rooms: 2
+    floor: 3
+    build_year: 2020
+    current_price: 750000
+    city: "Łódź"
+    property_type: "blockOfFlats"
+
 # Output Configuration
 output:
   results_dir: "data/output"
@@ -118,6 +152,7 @@ output:
     model_architecture: true
     missing_data: true
     grid_search_results: true
+    prediction_results: true
 
 # Logging Configuration
 logging:
